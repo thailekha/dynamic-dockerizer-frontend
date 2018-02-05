@@ -1,0 +1,41 @@
+{
+  "name": "dynamic-dockerizer-master-frontend",
+  "description": "Frontend for Dynamic Dockerizer Master",
+  "version": "0.0.1",
+  "license": "MIT",
+  "author": "Thai Le",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thailekha/dynamic-dockerizer-master-frontend"
+  },
+  "scripts": {
+    "start": "webpack-dev-server --hot --inline",
+    "prebuild": "rimraf dist",
+    "build": "webpack",
+    "reinstall": "npm i rimraf && rimraf node_modules && npm uninstall -g elm && npm i -g elm && npm i && elm package install",
+    "lint-js": "./node_modules/eslint/bin/eslint.js --fix webpack.config.js src/static/index.js",
+    "lint-elm": "./node_modules/elm-format/bin/elm-format ./src --yes",
+    "heroku-postbuild": "./node_modules/webpack/bin/webpack.js --progress"
+  },
+  "engines": {
+    "node": "6.11.2"
+  },
+  "dependencies": {
+    "autoprefixer": "^6.7.7",
+    "copy-webpack-plugin": "^4.0.1",
+    "elm": "^0.18.0",
+    "elm-format": "^0.6.1-alpha",
+    "elm-webpack-loader": "^4.3.0",
+    "eslint": "^4.9.0",
+    "express": "^4.16.2",
+    "extract-text-webpack-plugin": "^2.1.0",
+    "file-loader": "^0.10.1",
+    "html-webpack-plugin": "^2.28.0",
+    "jquery": "^3.2.1",
+    "rimraf": "^2.6.1",
+    "url-loader": "^0.5.8",
+    "webpack": "^2.3.1",
+    "webpack-dev-server": "^2.4.2",
+    "webpack-merge": "^4.1.0"
+  }
+}
