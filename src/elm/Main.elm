@@ -2,20 +2,30 @@ module Main exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
-
-
--- component import example
-
-import Components.Hello exposing (hello)
+import Html.Events exposing (onClick, onInput)
+import RemoteData exposing (WebData)
+import Json.Decode as Decode
+import Json.Decode.Pipeline exposing (decode, hardcoded)
+import Json.Encode
+import Http
 
 
 -- APP
 
 
-main : Program Never Int Msg
+main : Program Never Model Msg
 main =
-    Html.beginnerProgram { model = model, view = view, update = update }
+    program
+        { init = init
+        , view = view
+        , update = update
+        , subscriptions = subscriptions
+        }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
 
 
 
@@ -23,12 +33,54 @@ main =
 
 
 type alias Model =
-    Int
+    { credentials : WebData Credentials
+    , credentialsInput : Credentials
+    }
 
 
-model : number
-model =
-    0
+type alias Credentials =
+    { userName : String
+    , accessKeyId : String
+    , secretAccessKey : String
+    }
+
+
+updateUserNameInput : Credentials -> String -> Credentials
+updateUserNameInput cred userName =
+    { cred
+        | userName = userName
+    }
+
+
+updateAccessKeyIdInput : Credentials -> String -> Credentials
+updateAccessKeyIdInput cred accessKeyId =
+    { cred
+        | accessKeyId = accessKeyId
+    }
+
+
+updateSecretAccessKeyInput : Credentials -> String -> Credentials
+updateSecretAccessKeyInput cred secretAccessKey =
+    { cred
+        | secretAccessKey = secretAccessKey
+    }
+
+
+initCredentialsInput : Credentials
+initCredentialsInput =
+    { userName = ""
+    , accessKeyId = ""
+    , secretAccessKey = ""
+    }
+
+
+init : ( Model, Cmd Msg )
+init =
+    ( { credentials = RemoteData.NotAsked
+      , credentialsInput = initCredentialsInput
+      }
+    , Cmd.none
+    )
 
 
 
@@ -36,50 +88,92 @@ model =
 
 
 type Msg
-    = NoOp
-    | Increment
+    = UserNameInput String
+    | AccessKeyIdInput String
+    | SecretAccessKeyInput String
+    | Login
+    | LoginResponse (WebData Credentials)
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoOp ->
-            model
+        UserNameInput str ->
+            ( { model | credentialsInput = updateUserNameInput model.credentialsInput str }, Cmd.none )
 
-        Increment ->
-            model + 1
+        AccessKeyIdInput str ->
+            ( { model | credentialsInput = updateAccessKeyIdInput model.credentialsInput str }, Cmd.none )
+
+        SecretAccessKeyInput str ->
+            ( { model | credentialsInput = updateSecretAccessKeyInput model.credentialsInput str }, Cmd.none )
+
+        Login ->
+            ( model, reqLogin model )
+
+        LoginResponse response ->
+            ( { model | credentials = response }, Cmd.none )
 
 
 
 -- VIEW
--- Html is defined as: elem [ attribs ][ children ]
--- CSS can be applied via class names or inline style attrib
+
+
+loginForm : Html Msg
+loginForm =
+    div []
+        [ text "Username:"
+        , br [] []
+        , input [ name "userName", type_ "text", onInput UserNameInput ] []
+        , br [] []
+        , text "Access key ID:"
+        , br [] []
+        , input [ name "accessKeyId", type_ "text", onInput AccessKeyIdInput ] []
+        , br [] []
+        , text "Secret access key:"
+        , br [] []
+        , input [ name "secretAccessKey", type_ "password", onInput SecretAccessKeyInput ] []
+        , br [] []
+        , button [ onClick Login ] [ text "Login" ]
+        ]
+
+
+maybeLoggedIn : WebData Credentials -> Html Msg
+maybeLoggedIn response =
+    case response of
+        RemoteData.Success stockHoldings ->
+            text "Hi ..."
+
+        _ ->
+            loginForm
 
 
 view : Model -> Html Msg
 view model =
     div [ class "container", style [ ( "margin-top", "30px" ), ( "text-align", "center" ) ] ]
         [ -- inline CSS (literal)
-          div [ class "row" ]
-            [ div [ class "col-xs-12" ]
-                [ div [ class "jumbotron" ]
-                    [ img [ src "static/img/elm.jpg" ] [] -- inline CSS (via var)
-                    , hello model -- ext 'hello' component (takes 'model' as arg)
-                    , p [] [ text ("Elm Webpack Starter") ]
-                    , button [ class "btn btn-primary btn-lg", onClick Increment ]
-                        [ -- click handler
-                          span [ class "glyphicon glyphicon-star" ] [] -- glyphicon
-                        , span [] [ text "FTW!" ]
-                        ]
-                    ]
-                ]
-            ]
+          maybeLoggedIn model.credentials
         ]
 
 
+decodeCredentials : Model -> Decode.Decoder Credentials
+decodeCredentials model =
+    decode Credentials
+        |> hardcoded model.credentialsInput.userName
+        |> hardcoded model.credentialsInput.accessKeyId
+        |> hardcoded model.credentialsInput.secretAccessKey
 
---reqAllRooms : Cmd Msg
---reqAllRooms =
---    Http.get ("https://rooms-checker-go.herokuapp.com/api/public/rooms") allRoomsDecoder
---        |> RemoteData.sendRequest
---        |> Cmd.map OnAllRoomsResponse
+
+encodeCredentials : Credentials -> Json.Encode.Value
+encodeCredentials record =
+    Json.Encode.object
+        [ ( "userName", Json.Encode.string record.userName )
+        , ( "accessKeyId", Json.Encode.string record.accessKeyId )
+        , ( "secretAccessKey", Json.Encode.string record.secretAccessKey )
+        ]
+
+
+reqLogin : Model -> Cmd Msg
+reqLogin model =
+    Http.post ("http://localhost:8083/ec2/user") (Http.jsonBody (encodeCredentials model.credentialsInput)) (decodeCredentials model)
+        |> RemoteData.sendRequest
+        |> Cmd.map LoginResponse
