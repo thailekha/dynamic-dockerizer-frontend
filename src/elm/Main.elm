@@ -2,84 +2,63 @@ module Main exposing (..)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Components.CredsController as CredsController
+import Components.Creds as Creds
 
 
--- component import example
-
-import Components.Hello exposing (hello)
-
-
--- APP
-
-
-main : Program Never Int Msg
+main : Program (Maybe Creds.Credentials) Model Msg
 main =
-    Html.beginnerProgram { model = model, view = view, update = update }
+    Html.programWithFlags
+        { init = init
+        , view = view
+        , update = update
+        , subscriptions = subscriptions
+        }
 
 
-
--- MODEL
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
 
 
 type alias Model =
-    Int
+    { credsModel : CredsController.Model
+    }
 
 
-model : number
-model =
-    0
-
-
-
--- UPDATE
+init : Maybe Creds.Credentials -> ( Model, Cmd Msg )
+init initialUser =
+    ( { credsModel = CredsController.init initialUser
+      }
+    , Cmd.none
+    )
 
 
 type Msg
-    = NoOp
-    | Increment
+    = CredsControllerMsg CredsController.Msg
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        NoOp ->
-            model
+        CredsControllerMsg subMsg ->
+            let
+                ( subModel, subCmd ) =
+                    CredsController.update subMsg model.credsModel
+            in
+                ( { model | credsModel = subModel }, Cmd.map CredsControllerMsg subCmd )
 
-        Increment ->
-            model + 1
 
-
-
--- VIEW
--- Html is defined as: elem [ attribs ][ children ]
--- CSS can be applied via class names or inline style attrib
+liftCredsControllerView : Html CredsController.Msg -> Html Msg
+liftCredsControllerView credsControllerHtml =
+    Html.map CredsControllerMsg credsControllerHtml
 
 
 view : Model -> Html Msg
 view model =
     div [ class "container", style [ ( "margin-top", "30px" ), ( "text-align", "center" ) ] ]
         [ -- inline CSS (literal)
-          div [ class "row" ]
-            [ div [ class "col-xs-12" ]
-                [ div [ class "jumbotron" ]
-                    [ img [ src "static/img/elm.jpg" ] [] -- inline CSS (via var)
-                    , hello model -- ext 'hello' component (takes 'model' as arg)
-                    , p [] [ text ("Elm Webpack Starter") ]
-                    , button [ class "btn btn-primary btn-lg", onClick Increment ]
-                        [ -- click handler
-                          span [ class "glyphicon glyphicon-star" ] [] -- glyphicon
-                        , span [] [ text "FTW!" ]
-                        ]
-                    ]
-                ]
-            ]
+          CredsController.either model.credsModel
+            (liftCredsControllerView (CredsController.view model.credsModel))
+            (liftCredsControllerView (CredsController.loginForm model.credsModel))
         ]
-
-
-
---reqAllRooms : Cmd Msg
---reqAllRooms =
---    Http.get ("https://rooms-checker-go.herokuapp.com/api/public/rooms") allRoomsDecoder
---        |> RemoteData.sendRequest
---        |> Cmd.map OnAllRoomsResponse
