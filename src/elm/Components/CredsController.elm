@@ -169,7 +169,7 @@ either model x y =
 reqLogin : Model -> Cmd Msg
 reqLogin model =
     Http.post
-        ("http://localhost:8083/ec2/user")
+        ("http://localhost:8083/iam/verify")
         (Http.jsonBody (Creds.encodeCredentials model.credentialsInput))
         (Creds.decodeCredentials model.credentialsInput)
         |> RemoteData.sendRequest
