@@ -13,7 +13,7 @@
     "prebuild": "rimraf dist",
     "build": "webpack",
     "reinstall": "npm i rimraf && rimraf node_modules && npm uninstall -g elm && npm i -g elm && npm i && elm package install",
-    "lint-js": "./node_modules/eslint/bin/eslint.js --fix webpack.config.js src/static/index.js",
+    "test": "./node_modules/eslint/bin/eslint.js --fix webpack.config.js src/static/index.js",
     "lint-elm": "./node_modules/elm-format/bin/elm-format ./src --yes",
     "heroku-postbuild": "./node_modules/webpack/bin/webpack.js --progress"
   },
