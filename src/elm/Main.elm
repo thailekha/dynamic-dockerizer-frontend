@@ -1,64 +1,18 @@
 module Main exposing (..)
 
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Components.CredsController as CredsController
-import Components.Creds as Creds
+import Views
+import Types.Auth
+import RouteUrl as Routing
+import State exposing (Model, Msg, init, update)
 
 
-main : Program (Maybe Creds.Credentials) Model Msg
+main : Routing.RouteUrlProgram (Maybe Types.Auth.Credentials) Model Msg
 main =
-    Html.programWithFlags
-        { init = init
-        , view = view
+    Routing.programWithFlags
+        { delta2url = Views.delta2url
+        , location2messages = Views.location2messages
+        , init = init
+        , view = Views.view
+        , subscriptions = (\model -> Sub.none)
         , update = update
-        , subscriptions = subscriptions
         }
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    Sub.none
-
-
-type alias Model =
-    { credsModel : CredsController.Model
-    }
-
-
-init : Maybe Creds.Credentials -> ( Model, Cmd Msg )
-init initialUser =
-    ( { credsModel = CredsController.init initialUser
-      }
-    , Cmd.none
-    )
-
-
-type Msg
-    = CredsControllerMsg CredsController.Msg
-
-
-update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        CredsControllerMsg subMsg ->
-            let
-                ( subModel, subCmd ) =
-                    CredsController.update subMsg model.credsModel
-            in
-                ( { model | credsModel = subModel }, Cmd.map CredsControllerMsg subCmd )
-
-
-liftCredsControllerView : Html CredsController.Msg -> Html Msg
-liftCredsControllerView credsControllerHtml =
-    Html.map CredsControllerMsg credsControllerHtml
-
-
-view : Model -> Html Msg
-view model =
-    div [ class "container", style [ ( "margin-top", "30px" ), ( "text-align", "center" ) ] ]
-        [ -- inline CSS (literal)
-          CredsController.either model.credsModel
-            (liftCredsControllerView (CredsController.view model.credsModel))
-            (liftCredsControllerView (CredsController.loginForm model.credsModel))
-        ]

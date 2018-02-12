@@ -8,10 +8,10 @@ cache:
     - sysconfcpus
 
 before_install:
-  - npm i -g elm webpack
+  - npm i -g elm webpack yarn
 
 install: 
-  - npm install
+  - yarn install
   - elm-package install -y
   - |
     if [ ! -d sysconfcpus/bin ];

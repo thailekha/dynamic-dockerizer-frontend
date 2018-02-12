@@ -1,4 +1,4 @@
-module Components.Creds exposing (..)
+module Types.Auth exposing (..)
 
 import Json.Decode as Decode
 import Json.Decode.Pipeline exposing (decode, hardcoded)
@@ -17,6 +17,19 @@ type AuthenticationState
     | LoggedIn Credentials
 
 
+constructCredentials : String -> String -> String -> Credentials
+constructCredentials userName accessKeyId secretAccessKey =
+    { userName = userName
+    , accessKeyId = accessKeyId
+    , secretAccessKey = secretAccessKey
+    }
+
+
+emptyCredentials : Credentials
+emptyCredentials =
+    constructCredentials "" "" ""
+
+
 decodeCredentials : Credentials -> Decode.Decoder Credentials
 decodeCredentials credentialsInput =
     decode Credentials
@@ -32,24 +45,3 @@ encodeCredentials record =
         , ( "accessKeyId", Json.Encode.string record.accessKeyId )
         , ( "secretAccessKey", Json.Encode.string record.secretAccessKey )
         ]
-
-
-updateUserNameInput : Credentials -> String -> Credentials
-updateUserNameInput cred userName =
-    { cred
-        | userName = userName
-    }
-
-
-updateAccessKeyIdInput : Credentials -> String -> Credentials
-updateAccessKeyIdInput cred accessKeyId =
-    { cred
-        | accessKeyId = accessKeyId
-    }
-
-
-updateSecretAccessKeyInput : Credentials -> String -> Credentials
-updateSecretAccessKeyInput cred secretAccessKey =
-    { cred
-        | secretAccessKey = secretAccessKey
-    }
