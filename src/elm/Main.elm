@@ -1,16 +1,18 @@
 module Main exposing (..)
 
-import Html
 import Views
 import Types.Auth
+import RouteUrl as Routing
 import State exposing (Model, Msg, init, update)
 
 
-main : Program (Maybe Types.Auth.Credentials) Model Msg
+main : Routing.RouteUrlProgram (Maybe Types.Auth.Credentials) Model Msg
 main =
-    Html.programWithFlags
-        { init = init
+    Routing.programWithFlags
+        { delta2url = Views.delta2url
+        , location2messages = Views.location2messages
+        , init = init
         , view = Views.view
-        , update = update
         , subscriptions = (\model -> Sub.none)
+        , update = update
         }

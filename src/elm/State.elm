@@ -2,8 +2,11 @@ port module State exposing (..)
 
 import Http
 import RemoteData exposing (WebData)
+import Navigation exposing (Location)
 import Pages.Login as Login
 import Types.Auth as Auth
+import Material
+import RouteUrl as Routing
 
 
 type alias Model =
@@ -11,6 +14,8 @@ type alias Model =
     , userNameInput : String
     , accessKeyIdInput : String
     , secretAccessKeyInput : String
+    , selectedTab : Int
+    , mdl : Material.Model
     }
 
 
@@ -20,6 +25,8 @@ init initialUser =
       , userNameInput = ""
       , accessKeyIdInput = ""
       , secretAccessKeyInput = ""
+      , selectedTab = 1
+      , mdl = Material.model
       }
     , Cmd.none
     )
@@ -32,6 +39,8 @@ type Msg
     | LoginSubmit
     | LoginResponse (WebData Auth.Credentials)
     | Logout
+    | SelectTab Int
+    | Mdl (Material.Msg Msg)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -71,6 +80,12 @@ update msg model =
               }
             , logout ()
             )
+
+        SelectTab idx ->
+            ( { model | selectedTab = idx }, Cmd.none )
+
+        Mdl msg_ ->
+            Material.update Mdl msg_ model
 
 
 port logout : () -> Cmd msg
