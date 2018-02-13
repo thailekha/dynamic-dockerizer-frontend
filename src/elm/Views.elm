@@ -3,6 +3,7 @@ module Views exposing (..)
 import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
+import Pages.Router as Router
 import State exposing (..)
 import Helpers exposing (..)
 
@@ -20,10 +21,15 @@ globalView model =
 
 view : Model -> Html Msg
 view model =
-    div []
-        [ Helpers.nav 0 model (tabLabels globalTabs)
-        , model |> tryGetTabView model.selectedTab globalTabs
-        ]
+    case model.route of
+        Router.LandingRoute ->
+            homeView model
+
+        Router.GantryRoute gantrySubRoute ->
+            gantryView gantrySubRoute model
+
+        Router.NotFoundRoute ->
+            e404 model
 
 
 loginView : Model -> Html Msg
@@ -57,7 +63,8 @@ homeView model =
           (case model.login.authenticationState of
             Auth.LoggedIn creds ->
                 div []
-                    [ text ("Hi " ++ creds.userName)
+                    [ navMdl 0 0 model <| tabLabels globalTabs
+                    , text ("Hi " ++ creds.userName)
                     , logoutView model
                     ]
 
@@ -72,29 +79,37 @@ logoutView model =
     buttonMdl model 1 Logout "Logout"
 
 
--- Gantry
+
+-- Gantry subview
 
 
-gantryView : Model -> Html Msg
-gantryView model =
+gantryView : Router.GantrySubRoute -> Model -> Html Msg
+gantryView subRoute model =
     div []
-        [ subNav 1 globalTabsLength model (tabLabels gantryTabs)
-        , text "Gantry"
-        , model |> tryGetTabView (model.selectedTab - globalTabsLength) gantryTabs
+        [ navMdl 0 1 model <| tabLabels globalTabs
+        , (case subRoute of
+            Router.ContainerRoute ->
+                containersView model
+
+            Router.ImageRoute ->
+                imagesView model
+          )
         ]
 
 
 containersView : Model -> Html Msg
 containersView model =
     div []
-        [ text "Containers"
+        [ navMdl 1 0 model <| tabLabels gantryTabs
+        , text "Containers"
         ]
 
 
 imagesView : Model -> Html Msg
 imagesView model =
     div []
-        [ text "Images"
+        [ navMdl 1 1 model <| tabLabels gantryTabs
+        , text "Images"
         ]
 
 
@@ -102,25 +117,21 @@ imagesView model =
 -- ROUTING
 
 
-gantryTabs : List ( String, String, Model -> Html Msg )
-gantryTabs =
-    [ ( "Containers", "containers", containersView )
-    , ( "Images", "images", imagesView )
-    ]
-
-
-globalTabs : List ( String, String, Model -> Html Msg )
+globalTabs : List ( String, String )
 globalTabs =
-    [ ( "Home", "homes", homeView )
-    , ( "Gantry", "gantry", gantryView )
+    [ ( "Home", "" )
+    , ( "Gantry", "gantry/container" )
     ]
 
 
-globalTabsLength : Int
-globalTabsLength =
-    2
+gantryTabs : List ( String, String )
+gantryTabs =
+    [ ( "Container", "gantry/container" )
+    , ( "Image", "gantry/image" )
+    ]
 
 
-allTabs : List ( String, String, Model -> Html Msg )
-allTabs =
-    List.concat [ globalTabs, gantryTabs ]
+e404 : x -> Html Msg
+e404 _ =
+    div []
+        [ text "route not found" ]

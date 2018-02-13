@@ -1,8 +1,7 @@
 module Helpers exposing (..)
 
 import Html exposing (Html, text, div, p, br)
-import Html.Attributes exposing (class, style)
-import Array exposing (Array)
+import Html.Attributes exposing (class, style, href)
 import Material.Options as Options
 import Material.Button as Button
 import Material.Textfield as Textfield
@@ -65,6 +64,18 @@ textMdl display =
         [ text display ]
 
 
+navMdl : Int -> Int -> Model -> List (Tabs.Label Msg) -> Html Msg
+navMdl index activeTabIndex model labels =
+    Tabs.render State.Mdl
+        [ index ]
+        model.mdl
+        [ Tabs.ripple
+        , Tabs.activeTab activeTabIndex
+        ]
+        labels
+        []
+
+
 
 -- Auth
 
@@ -84,61 +95,6 @@ protectedView model loggedInView =
 -- Routing
 
 
-nav : Int -> Model -> List (Tabs.Label Msg) -> Html Msg
-nav index model labels =
-    Tabs.render State.Mdl
-        [ index ]
-        model.mdl
-        [ Tabs.ripple
-        , Tabs.onSelectTab State.SelectTab
-        , Tabs.activeTab model.selectedTab
-        ]
-        labels
-        []
-
-
-subNav : Int -> Int -> Model -> List (Tabs.Label Msg) -> Html Msg
-subNav index patch model labels =
-    -- patch: the length of the global tabs
-    Tabs.render State.Mdl
-        [ index ]
-        model.mdl
-        [ Tabs.ripple
-        , Tabs.onSelectTab (State.SelectTabPatch patch)
-        , Tabs.activeTab model.selectedTab
-        ]
-        labels
-        []
-
-
-tabLabels : List ( String, String, Model -> Html Msg ) -> List (Tabs.Label Msg)
-tabLabels tabList =
-    let
-        labelGetter =
-            (\( label, _, _ ) -> Tabs.label [] [ text label ])
-    in
-        List.map labelGetter tabList
-
-
-tabViews : List ( String, String, Model -> Html Msg ) -> Array (Model -> Html Msg)
-tabViews tabList =
-    let
-        viewGetter =
-            (\( _, _, v ) -> v)
-    in
-        tabList
-            |> List.map viewGetter
-            |> Array.fromList
-
-
-tryGetTabView : Int -> List ( String, String, Model -> Html Msg ) -> (Model -> Html Msg)
-tryGetTabView index tabList =
-    tabViews tabList
-        |> Array.get index
-        |> Maybe.withDefault e404
-
-
-e404 : x -> Html Msg
-e404 _ =
-    div []
-        [ text "route not found" ]
+tabLabels : List ( String, String ) -> List (Tabs.Label Msg)
+tabLabels tabs =
+    List.map (\( label, url ) -> Tabs.label [ Options.attribute <| href ("#/" ++ url) ] [ text label ]) tabs

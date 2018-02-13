@@ -5,6 +5,8 @@ import RemoteData exposing (WebData)
 import Pages.Login as Login
 import Types.Auth as Auth
 import Material
+import Navigation exposing (Location)
+import Pages.Router as Router
 
 
 type alias Model =
@@ -12,20 +14,27 @@ type alias Model =
     , userNameInput : String
     , accessKeyIdInput : String
     , secretAccessKeyInput : String
-    , selectedTab : Int
+    , route : Router.Route
     , mdl : Material.Model
     }
 
 
-init : Maybe Auth.Credentials -> ( Model, Cmd Msg )
-init initialUser =
-    ( { login = Login.init initialUser
-      , userNameInput = ""
-      , accessKeyIdInput = ""
-      , secretAccessKeyInput = ""
-      , selectedTab = 1
-      , mdl = Material.model
-      }
+initModel : Maybe Auth.Credentials -> Router.Route -> Model
+initModel initialUser initialRoute =
+    { login = Login.init initialUser
+    , userNameInput = ""
+    , accessKeyIdInput = ""
+    , secretAccessKeyInput = ""
+    , route = initialRoute
+    , mdl = Material.model
+    }
+
+
+init : Maybe Auth.Credentials -> Location -> ( Model, Cmd Msg )
+init initialUser location =
+    ( location
+        |> Router.parseLocation
+        |> initModel initialUser
     , Cmd.none
     )
 
@@ -37,8 +46,7 @@ type Msg
     | LoginSubmit
     | LoginResponse (WebData Auth.Credentials)
     | Logout
-    | SelectTab Int
-    | SelectTabPatch Int Int
+    | OnLocationChange Location
     | Mdl (Material.Msg Msg)
 
 
@@ -80,11 +88,8 @@ update msg model =
             , logout ()
             )
 
-        SelectTab idx ->
-            ( { model | selectedTab = idx }, Cmd.none )
-
-        SelectTabPatch patch idx ->
-            ( { model | selectedTab = patch + idx }, Cmd.none )
+        OnLocationChange location ->
+            ( { model | route = (Router.parseLocation location) }, Cmd.none )
 
         Mdl msg_ ->
             Material.update Mdl msg_ model
