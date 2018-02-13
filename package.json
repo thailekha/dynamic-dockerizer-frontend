@@ -9,6 +9,7 @@
     "url": "https://github.com/thailekha/dynamic-dockerizer-frontend"
   },
   "scripts": {
+    "postinstall": "elm package install -y",
     "start": "webpack-dev-server --hot --inline",
     "prebuild": "rimraf dist",
     "build": "webpack",

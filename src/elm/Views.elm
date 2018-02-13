@@ -1,15 +1,29 @@
 module Views exposing (..)
 
 import Html exposing (..)
-import Array exposing (Array)
-import Dict exposing (Dict)
 import RemoteData
-import Material.Tabs as Tabs
-import Navigation
-import RouteUrl as Routing
 import Types.Auth as Auth
 import State exposing (..)
 import Helpers exposing (..)
+
+
+globalView : Model -> Html Msg
+globalView model =
+    (case model.login.authenticationState of
+        Auth.LoggedIn _ ->
+            view model
+
+        Auth.LoggedOut ->
+            loginView model
+    )
+
+
+view : Model -> Html Msg
+view model =
+    div []
+        [ Helpers.nav 0 model (tabLabels globalTabs)
+        , model |> tryGetTabView model.selectedTab globalTabs
+        ]
 
 
 loginView : Model -> Html Msg
@@ -44,6 +58,7 @@ homeView model =
             Auth.LoggedIn creds ->
                 div []
                     [ text ("Hi " ++ creds.userName)
+                    , logoutView model
                     ]
 
             Auth.LoggedOut ->
@@ -57,94 +72,55 @@ logoutView model =
     buttonMdl model 1 Logout "Logout"
 
 
-view : Model -> Html Msg
-view model =
-    (case model.login.authenticationState of
-        Auth.LoggedIn _ ->
-            div []
-                [ nav model
-                , (Array.get model.selectedTab tabViews |> Maybe.withDefault e404) model
-                ]
-
-        Auth.LoggedOut ->
-            loginView model
-    )
+-- Gantry
 
 
-nav : Model -> Html Msg
-nav model =
-    Tabs.render Mdl
-        [ 0 ]
-        model.mdl
-        [ Tabs.ripple
-        , Tabs.onSelectTab SelectTab
-        , Tabs.activeTab model.selectedTab
-        ]
-        tabLabels
-        []
-
-
-e404 : x -> Html Msg
-e404 _ =
+gantryView : Model -> Html Msg
+gantryView model =
     div []
-        [ text "route not found" ]
+        [ subNav 1 globalTabsLength model (tabLabels gantryTabs)
+        , text "Gantry"
+        , model |> tryGetTabView (model.selectedTab - globalTabsLength) gantryTabs
+        ]
+
+
+containersView : Model -> Html Msg
+containersView model =
+    div []
+        [ text "Containers"
+        ]
+
+
+imagesView : Model -> Html Msg
+imagesView model =
+    div []
+        [ text "Images"
+        ]
 
 
 
 -- ROUTING
 
 
-tabs : List ( String, String, Model -> Html Msg )
-tabs =
-    [ ( "Home", "home", homeView )
-    , ( "Account", "account", logoutView )
+gantryTabs : List ( String, String, Model -> Html Msg )
+gantryTabs =
+    [ ( "Containers", "containers", containersView )
+    , ( "Images", "images", imagesView )
     ]
 
 
-tabLabels : List (Tabs.Label Msg)
-tabLabels =
-    List.map (\( label, _, _ ) -> Tabs.label [] [ text label ]) tabs
-
-
-tabUrls : Array String
-tabUrls =
-    List.map (\( _, url, _ ) -> url) tabs |> Array.fromList
-
-
-tabViews : Array (Model -> Html Msg)
-tabViews =
-    List.map (\( _, _, v ) -> v) tabs |> Array.fromList
-
-
-urlTabs : Dict String Int
-urlTabs =
-    List.indexedMap (\idx ( _, url, _ ) -> ( url, idx )) tabs |> Dict.fromList
-
-
-urlOf : Model -> String
-urlOf model =
-    "#" ++ (Array.get model.selectedTab tabUrls |> Maybe.withDefault "")
-
-
-delta2url : Model -> Model -> Maybe Routing.UrlChange
-delta2url model1 model2 =
-    if model1.selectedTab /= model2.selectedTab then
-        { entry = Routing.NewEntry
-        , url = urlOf model2
-        }
-            |> Just
-    else
-        Nothing
-
-
-location2messages : Navigation.Location -> List Msg
-location2messages location =
-    [ case location.hash |> String.dropLeft 1 of
-        "" ->
-            SelectTab 0
-
-        x ->
-            Dict.get x urlTabs
-                |> Maybe.withDefault -1
-                |> SelectTab
+globalTabs : List ( String, String, Model -> Html Msg )
+globalTabs =
+    [ ( "Home", "homes", homeView )
+    , ( "Gantry", "gantry", gantryView )
     ]
+
+
+globalTabsLength : Int
+globalTabsLength =
+    2
+
+
+allTabs : List ( String, String, Model -> Html Msg )
+allTabs =
+    List.concat [ globalTabs, gantryTabs ]

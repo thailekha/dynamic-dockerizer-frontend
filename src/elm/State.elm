@@ -2,11 +2,9 @@ port module State exposing (..)
 
 import Http
 import RemoteData exposing (WebData)
-import Navigation exposing (Location)
 import Pages.Login as Login
 import Types.Auth as Auth
 import Material
-import RouteUrl as Routing
 
 
 type alias Model =
@@ -40,6 +38,7 @@ type Msg
     | LoginResponse (WebData Auth.Credentials)
     | Logout
     | SelectTab Int
+    | SelectTabPatch Int Int
     | Mdl (Material.Msg Msg)
 
 
@@ -83,6 +82,9 @@ update msg model =
 
         SelectTab idx ->
             ( { model | selectedTab = idx }, Cmd.none )
+
+        SelectTabPatch patch idx ->
+            ( { model | selectedTab = patch + idx }, Cmd.none )
 
         Mdl msg_ ->
             Material.update Mdl msg_ model
