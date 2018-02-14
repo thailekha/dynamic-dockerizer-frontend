@@ -1,6 +1,7 @@
 module Types.Auth exposing (..)
 
-import Json.Decode as Decode
+import Json.Decode exposing (Decoder)
+import Json.Decode exposing (int, string, float, nullable, Decoder)
 import Json.Decode.Pipeline exposing (decode, hardcoded)
 import Json.Encode
 
@@ -30,7 +31,7 @@ emptyCredentials =
     constructCredentials "" "" ""
 
 
-decodeCredentials : Credentials -> Decode.Decoder Credentials
+decodeCredentials : Credentials -> Decoder Credentials
 decodeCredentials credentialsInput =
     decode Credentials
         |> hardcoded credentialsInput.userName

@@ -2,15 +2,18 @@ port module State exposing (..)
 
 import Http
 import RemoteData exposing (WebData)
-import Pages.Login as Login
+import Pages.Login as LoginPage
+import Pages.Containers as ContainersPage
 import Types.Auth as Auth
+import Types.Containers as Containers
 import Material
 import Navigation exposing (Location)
 import Pages.Router as Router
 
 
 type alias Model =
-    { login : Login.Model
+    { login : LoginPage.Model
+    , containers : ContainersPage.Model
     , userNameInput : String
     , accessKeyIdInput : String
     , secretAccessKeyInput : String
@@ -21,7 +24,8 @@ type alias Model =
 
 initModel : Maybe Auth.Credentials -> Router.Route -> Model
 initModel initialUser initialRoute =
-    { login = Login.init initialUser
+    { login = LoginPage.init initialUser
+    , containers = ContainersPage.init
     , userNameInput = ""
     , accessKeyIdInput = ""
     , secretAccessKeyInput = ""
@@ -46,6 +50,8 @@ type Msg
     | LoginSubmit
     | LoginResponse (WebData Auth.Credentials)
     | Logout
+    | ReqContainers
+    | OnContainersResponse (WebData Containers.Containers)
     | OnLocationChange Location
     | Mdl (Material.Msg Msg)
 
@@ -67,7 +73,7 @@ update msg model =
 
         LoginResponse response ->
             ( { model
-                | login = Login.updateCredentialsWebdata model.login response
+                | login = LoginPage.updateCredentialsWebdata model.login response
               }
             , (case response of
                 RemoteData.Success creds ->
@@ -80,13 +86,19 @@ update msg model =
 
         Logout ->
             ( { model
-                | login = Login.init Nothing
+                | login = LoginPage.init Nothing
                 , userNameInput = ""
                 , accessKeyIdInput = ""
                 , secretAccessKeyInput = ""
               }
             , logout ()
             )
+
+        ReqContainers ->
+            ( model, reqContainers )
+
+        OnContainersResponse response ->
+            ( { model | containers = ContainersPage.updateContainersWebdata model.containers response }, Cmd.none )
 
         OnLocationChange location ->
             ( { model | route = (Router.parseLocation location) }, Cmd.none )
@@ -113,3 +125,10 @@ reqLogin model =
             (Auth.decodeCredentials credentialsInput)
             |> RemoteData.sendRequest
             |> Cmd.map LoginResponse
+
+
+reqContainers : Cmd Msg
+reqContainers =
+    Http.get ("http://localhost:3001/api/containers/all") Containers.decodeContainers
+        |> RemoteData.sendRequest
+        |> Cmd.map OnContainersResponse

@@ -4,6 +4,7 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
+import Pages.Containers as Containers
 import State exposing (..)
 import Helpers exposing (..)
 
@@ -63,7 +64,7 @@ homeView model =
           (case model.login.authenticationState of
             Auth.LoggedIn creds ->
                 div []
-                    [ navMdl 0 0 model <| tabLabels globalTabs
+                    [ navMdl 0 0 model <| tabLabels Router.globalTabs
                     , text ("Hi " ++ creds.userName)
                     , logoutView model
                     ]
@@ -86,10 +87,10 @@ logoutView model =
 gantryView : Router.GantrySubRoute -> Model -> Html Msg
 gantryView subRoute model =
     div []
-        [ navMdl 0 1 model <| tabLabels globalTabs
+        [ navMdl 0 1 model <| tabLabels Router.globalTabs
         , (case subRoute of
-            Router.ContainerRoute ->
-                containersView model
+            Router.ContainerRoute containerSubRoute ->
+                containersView containerSubRoute model
 
             Router.ImageRoute ->
                 imagesView model
@@ -97,38 +98,62 @@ gantryView subRoute model =
         ]
 
 
-containersView : Model -> Html Msg
-containersView model =
-    div []
-        [ navMdl 1 0 model <| tabLabels gantryTabs
-        , text "Containers"
-        ]
-
-
 imagesView : Model -> Html Msg
 imagesView model =
     div []
-        [ navMdl 1 1 model <| tabLabels gantryTabs
+        [ navMdl 1 1 model <| tabLabels Router.gantryTabs
         , text "Images"
         ]
 
 
 
+-- Containers subsubview
+
+
+containersView : Router.ContainerSubRoute -> Model -> Html Msg
+containersView subRoute model =
+    div []
+        [ navMdl 1 0 model <| tabLabels Router.gantryTabs
+        , (case subRoute of
+            Router.ContainerViewRoute ->
+                containersListView model
+
+            Router.ContainerCreateRoute ->
+                containersCreateView model
+          )
+        ]
+
+
+containersListView : Model -> Html Msg
+containersListView model =
+    div []
+        [ navMdl 2 0 model <| tabLabels Router.containerTabs
+        , buttonMdl model 0 ReqContainers "Get containers"
+        , (case model.containers.containersWebdata of
+            RemoteData.NotAsked ->
+                text "Get containers"
+
+            RemoteData.Loading ->
+                text "Loading ..."
+
+            RemoteData.Success response ->
+                div [] (List.map (\c -> Containers.containerView c) response.containers)
+
+            RemoteData.Failure error ->
+                text (toString error)
+          )
+        ]
+
+
+containersCreateView : Model -> Html Msg
+containersCreateView model =
+    div []
+        [ navMdl 2 1 model <| tabLabels Router.containerTabs
+        ]
+
+
+
 -- ROUTING
-
-
-globalTabs : List ( String, String )
-globalTabs =
-    [ ( "Home", "" )
-    , ( "Gantry", "gantry/container" )
-    ]
-
-
-gantryTabs : List ( String, String )
-gantryTabs =
-    [ ( "Container", "gantry/container" )
-    , ( "Image", "gantry/image" )
-    ]
 
 
 e404 : x -> Html Msg
