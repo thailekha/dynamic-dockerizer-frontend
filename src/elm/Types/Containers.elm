@@ -15,6 +15,11 @@ decodeContainers =
         |> required "containers" (list decodeContainer)
 
 
+containerKey : Container -> String
+containerKey =
+    .id
+
+
 
 --type alias Labels =
 --    -- revise
@@ -157,7 +162,8 @@ decodeMount =
 
 type alias Port =
     { privatePort : Int
-    , publicPort : Int
+
+    --, publicPort : Int
     , type_ : String
     }
 
@@ -166,5 +172,5 @@ decodePort : Decoder Port
 decodePort =
     decode Port
         |> required "PrivatePort" int
-        |> required "PublicPort" int
+        --|> required "PublicPort" int
         |> required "Type" string

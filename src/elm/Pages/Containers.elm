@@ -23,6 +23,16 @@ updateContainersWebdata model response =
     }
 
 
+tryGetContainers : Model -> List Container
+tryGetContainers model =
+    case model.containersWebdata of
+        RemoteData.Success response ->
+            response.containers
+
+        _ ->
+            []
+
+
 containerView : Container -> Html msg
 containerView container =
     div []
@@ -38,6 +48,7 @@ portView : Port -> Html msg
 portView p =
     div []
         [ text <| toString p.privatePort
-        , text <| toString p.publicPort
+
+        --, text <| toString p.publicPort
         , text p.type_
         ]

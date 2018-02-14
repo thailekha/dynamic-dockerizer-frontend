@@ -6,17 +6,21 @@ import Pages.Login as LoginPage
 import Pages.Containers as ContainersPage
 import Types.Auth as Auth
 import Types.Containers as Containers
+import Types.CommonResponses as CommonResponses
 import Material
 import Navigation exposing (Location)
 import Pages.Router as Router
+import Set exposing (Set)
+import Debug
 
 
 type alias Model =
-    { login : LoginPage.Model
-    , containers : ContainersPage.Model
+    { loginPage : LoginPage.Model
+    , containersPage : ContainersPage.Model
     , userNameInput : String
     , accessKeyIdInput : String
     , secretAccessKeyInput : String
+    , selectedContainers : Set String
     , route : Router.Route
     , mdl : Material.Model
     }
@@ -24,11 +28,12 @@ type alias Model =
 
 initModel : Maybe Auth.Credentials -> Router.Route -> Model
 initModel initialUser initialRoute =
-    { login = LoginPage.init initialUser
-    , containers = ContainersPage.init
+    { loginPage = LoginPage.init initialUser
+    , containersPage = ContainersPage.init
     , userNameInput = ""
     , accessKeyIdInput = ""
     , secretAccessKeyInput = ""
+    , selectedContainers = Set.empty
     , route = initialRoute
     , mdl = Material.model
     }
@@ -36,24 +41,28 @@ initModel initialUser initialRoute =
 
 init : Maybe Auth.Credentials -> Location -> ( Model, Cmd Msg )
 init initialUser location =
-    ( location
-        |> Router.parseLocation
-        |> initModel initialUser
-    , Cmd.none
-    )
+    let
+        route =
+            Router.parseLocation location
+    in
+        ( initModel initialUser route, cmdReqContainers route )
 
 
 type Msg
     = UserNameInput String
     | AccessKeyIdInput String
     | SecretAccessKeyInput String
+    | ToggleAllContainers
+    | ToggleContainers Containers.Container
     | LoginSubmit
     | LoginResponse (WebData Auth.Credentials)
     | Logout
-    | ReqContainers
     | OnContainersResponse (WebData Containers.Containers)
+    | ReqStartContainer
+    | OnStartContainerResponse (WebData CommonResponses.StringResponse)
     | OnLocationChange Location
     | Mdl (Material.Msg Msg)
+    | NoChange
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -68,12 +77,38 @@ update msg model =
         SecretAccessKeyInput str ->
             ( { model | secretAccessKeyInput = str }, Cmd.none )
 
+        ToggleAllContainers ->
+            let
+                fetchedContainers =
+                    ContainersPage.tryGetContainers model.containersPage
+            in
+                { model
+                    | selectedContainers =
+                        if allContainersSelected model then
+                            Set.empty
+                        else
+                            Set.fromList <|
+                                List.map Containers.containerKey <|
+                                    ContainersPage.tryGetContainers model.containersPage
+                }
+                    ! []
+
+        ToggleContainers container ->
+            { model
+                | selectedContainers =
+                    if Set.member (Containers.containerKey container) model.selectedContainers then
+                        Set.remove (Containers.containerKey container) model.selectedContainers
+                    else
+                        Set.insert (Containers.containerKey container) model.selectedContainers
+            }
+                ! []
+
         LoginSubmit ->
             ( model, reqLogin model )
 
         LoginResponse response ->
             ( { model
-                | login = LoginPage.updateCredentialsWebdata model.login response
+                | loginPage = LoginPage.updateCredentialsWebdata model.loginPage response
               }
             , (case response of
                 RemoteData.Success creds ->
@@ -86,7 +121,7 @@ update msg model =
 
         Logout ->
             ( { model
-                | login = LoginPage.init Nothing
+                | loginPage = LoginPage.init Nothing
                 , userNameInput = ""
                 , accessKeyIdInput = ""
                 , secretAccessKeyInput = ""
@@ -94,23 +129,64 @@ update msg model =
             , logout ()
             )
 
-        ReqContainers ->
-            ( model, reqContainers )
-
         OnContainersResponse response ->
-            ( { model | containers = ContainersPage.updateContainersWebdata model.containers response }, Cmd.none )
+            ( { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage response }, Cmd.none )
+
+        ReqStartContainer ->
+            ( model
+            , Cmd.batch <|
+                List.map (\containerID -> reqStartContainer containerID) <|
+                    Set.toList model.selectedContainers
+            )
+
+        OnStartContainerResponse response ->
+            ( model
+            , case response of
+                RemoteData.Success _ ->
+                    reqContainers
+
+                _ ->
+                    Cmd.none
+            )
 
         OnLocationChange location ->
-            ( { model | route = (Router.parseLocation location) }, Cmd.none )
+            let
+                newRoute =
+                    Router.parseLocation location
+            in
+                ( { model | route = newRoute }, cmdReqContainers newRoute )
 
         Mdl msg_ ->
             Material.update Mdl msg_ model
+
+        NoChange ->
+            ( model, Cmd.none )
 
 
 port logout : () -> Cmd msg
 
 
 port saveCreds : Auth.Credentials -> Cmd msg
+
+
+cmdReqContainers : Router.Route -> Cmd Msg
+cmdReqContainers newRoute =
+    case newRoute of
+        Router.GantryRoute gantryRoute ->
+            case gantryRoute of
+                Router.ContainerRoute containerRoute ->
+                    case containerRoute of
+                        Router.ContainerViewRoute ->
+                            reqContainers
+
+                        _ ->
+                            Cmd.none
+
+                _ ->
+                    Cmd.none
+
+        _ ->
+            Cmd.none
 
 
 reqLogin : Model -> Cmd Msg
@@ -132,3 +208,15 @@ reqContainers =
     Http.get ("http://localhost:3001/api/containers/all") Containers.decodeContainers
         |> RemoteData.sendRequest
         |> Cmd.map OnContainersResponse
+
+
+reqStartContainer : String -> Cmd Msg
+reqStartContainer containerID =
+    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/start") Http.emptyBody CommonResponses.decodeStringResponse
+        |> RemoteData.sendRequest
+        |> Cmd.map OnStartContainerResponse
+
+
+allContainersSelected : Model -> Bool
+allContainersSelected model =
+    Set.size model.selectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)

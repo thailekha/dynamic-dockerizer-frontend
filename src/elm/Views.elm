@@ -4,14 +4,13 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
-import Pages.Containers as Containers
 import State exposing (..)
 import Helpers exposing (..)
 
 
 globalView : Model -> Html Msg
 globalView model =
-    (case model.login.authenticationState of
+    (case model.loginPage.authenticationState of
         Auth.LoggedIn _ ->
             view model
 
@@ -37,7 +36,7 @@ loginView : Model -> Html Msg
 loginView model =
     centerDiv <|
         breaker
-            [ (case model.login.credentialsWebdata of
+            [ (case model.loginPage.credentialsWebdata of
                 RemoteData.NotAsked ->
                     textMdl "Please login"
 
@@ -61,7 +60,7 @@ homeView : Model -> Html Msg
 homeView model =
     centerDiv
         [ -- inline CSS (literal)
-          (case model.login.authenticationState of
+          (case model.loginPage.authenticationState of
             Auth.LoggedIn creds ->
                 div []
                     [ navMdl 0 0 model <| tabLabels Router.globalTabs
@@ -124,24 +123,22 @@ containersView subRoute model =
         ]
 
 
+
+-- Start  Stop   Restart   Pause   Unpause   Delete
+
+
 containersListView : Model -> Html Msg
 containersListView model =
     div []
         [ navMdl 2 0 model <| tabLabels Router.containerTabs
-        , buttonMdl model 0 ReqContainers "Get containers"
-        , (case model.containers.containersWebdata of
-            RemoteData.NotAsked ->
-                text "Get containers"
-
-            RemoteData.Loading ->
-                text "Loading ..."
-
-            RemoteData.Success response ->
-                div [] (List.map (\c -> Containers.containerView c) response.containers)
-
-            RemoteData.Failure error ->
-                text (toString error)
-          )
+        , br [] []
+        , buttonMdl model 1 State.ReqStartContainer "Start"
+        , buttonMdl model 2 State.NoChange "Stop"
+        , buttonMdl model 3 State.NoChange "Restart"
+        , buttonMdl model 4 State.NoChange "Pause"
+        , buttonMdl model 5 State.NoChange "Unpause"
+        , buttonMdl model 6 State.NoChange "Delete"
+        , containersTableMdl model
         ]
 
 

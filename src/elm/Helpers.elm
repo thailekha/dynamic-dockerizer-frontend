@@ -2,13 +2,18 @@ module Helpers exposing (..)
 
 import Html exposing (Html, text, div, p, br)
 import Html.Attributes exposing (class, style, href)
-import Material.Options as Options
+import Material.Options as Options exposing (when)
 import Material.Button as Button
 import Material.Textfield as Textfield
 import Material.Typography as Typo
 import Material.Tabs as Tabs
+import Material.Table as Table
+import Material.Toggles as Toggles
 import Types.Auth as Auth
+import Types.Containers as Containers
+import Pages.Containers as ContainersPage
 import State exposing (Model, Msg)
+import Set exposing (Set)
 
 
 -- HTML
@@ -76,13 +81,60 @@ navMdl index activeTabIndex model labels =
         []
 
 
+containersTableMdl : Model -> Html Msg
+containersTableMdl model =
+    Table.table []
+        [ Table.thead []
+            [ Table.tr []
+                [ Table.th []
+                    [ Toggles.checkbox State.Mdl
+                        [ -1 ]
+                        model.mdl
+                        [ Options.onToggle State.ToggleAllContainers
+                        , Toggles.value (State.allContainersSelected model)
+                        ]
+                        []
+                    ]
+                , Table.th [] [ text "Name" ]
+                , Table.th [] [ text "State" ]
+                , Table.th [] [ text "Status" ]
+                , Table.th [] [ text "Ports" ]
+                , Table.th [] [ text "Image" ]
+                ]
+            ]
+        , Table.tbody []
+            (ContainersPage.tryGetContainers model.containersPage
+                |> List.indexedMap
+                    (\idx container ->
+                        Table.tr
+                            [ when (Set.member (Containers.containerKey container) model.selectedContainers) Table.selected ]
+                            [ Table.td []
+                                [ Toggles.checkbox State.Mdl
+                                    [ idx ]
+                                    model.mdl
+                                    [ Options.onToggle (State.ToggleContainers container)
+                                    , Toggles.value <| Set.member (Containers.containerKey container) model.selectedContainers
+                                    ]
+                                    []
+                                ]
+                            , Table.td [] [ text <| toString container.names ]
+                            , Table.td [] [ text <| toString container.state ]
+                            , Table.td [] [ text <| toString container.status ]
+                            , Table.td [] [ text <| toString container.ports ]
+                            , Table.td [] [ text <| toString container.image ]
+                            ]
+                    )
+            )
+        ]
+
+
 
 -- Auth
 
 
 protectedView : Model -> Html Msg -> Html Msg
 protectedView model loggedInView =
-    (case model.login.authenticationState of
+    (case model.loginPage.authenticationState of
         Auth.LoggedIn _ ->
             loggedInView
 
