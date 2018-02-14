@@ -9,6 +9,9 @@ import Material.Typography as Typo
 import Material.Tabs as Tabs
 import Material.Table as Table
 import Material.Toggles as Toggles
+import Material.List as Lists
+import Material.Chip as Chip
+import Material.Color as Color
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Pages.Containers as ContainersPage
@@ -81,6 +84,26 @@ navMdl index activeTabIndex model labels =
         []
 
 
+listMdl : List String -> Html Msg
+listMdl items =
+    items
+        |> List.map (\item -> Lists.li [] [ Lists.content [] [ text item ] ])
+        |> Lists.ul []
+
+
+colorChipMdl : String -> Html Msg
+colorChipMdl str =
+    Chip.span []
+        [ Chip.content
+            (if str == "running" then
+                [ Color.background (Color.color Color.Green Color.A400) ]
+             else
+                []
+            )
+            [ text str ]
+        ]
+
+
 containersTableMdl : Model -> Html Msg
 containersTableMdl model =
     Table.table []
@@ -118,7 +141,7 @@ containersTableMdl model =
                                     []
                                 ]
                             , Table.td [] [ text <| toString container.names ]
-                            , Table.td [] [ text <| toString container.state ]
+                            , Table.td [] [ colorChipMdl container.state ]
                             , Table.td [] [ text <| toString container.status ]
                             , Table.td [] [ text <| toString container.ports ]
                             , Table.td [] [ text <| toString container.image ]

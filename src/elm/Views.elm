@@ -4,6 +4,7 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
+import Pages.Containers as ContainersPage
 import State exposing (..)
 import Helpers exposing (..)
 
@@ -123,17 +124,26 @@ containersView subRoute model =
         ]
 
 
-
--- Start  Stop   Restart   Pause   Unpause   Delete
-
-
 containersListView : Model -> Html Msg
 containersListView model =
     div []
         [ navMdl 2 0 model <| tabLabels Router.containerTabs
         , br [] []
+        , (let
+            managementStatus =
+                ContainersPage.containersManagementWebDataString model.containersPage
+           in
+            if List.length managementStatus > 0 then
+                div []
+                    [ textMdl "Management status"
+                    , listMdl managementStatus
+                    ]
+            else
+                textMdl "No management status"
+          )
+        , br [] []
         , buttonMdl model 1 State.ReqStartContainer "Start"
-        , buttonMdl model 2 State.NoChange "Stop"
+        , buttonMdl model 2 State.ReqStopContainer "Stop"
         , buttonMdl model 3 State.NoChange "Restart"
         , buttonMdl model 4 State.NoChange "Pause"
         , buttonMdl model 5 State.NoChange "Unpause"

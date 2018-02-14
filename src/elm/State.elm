@@ -59,7 +59,9 @@ type Msg
     | Logout
     | OnContainersResponse (WebData Containers.Containers)
     | ReqStartContainer
-    | OnStartContainerResponse (WebData CommonResponses.StringResponse)
+    | OnStartContainerResponse String (WebData CommonResponses.StringResponse)
+    | ReqStopContainer
+    | OnStopContainerResponse String (WebData CommonResponses.StringResponse)
     | OnLocationChange Location
     | Mdl (Material.Msg Msg)
     | NoChange
@@ -133,20 +135,31 @@ update msg model =
             ( { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage response }, Cmd.none )
 
         ReqStartContainer ->
-            ( model
-            , Cmd.batch <|
-                List.map (\containerID -> reqStartContainer containerID) <|
-                    Set.toList model.selectedContainers
+            ( { model
+                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
+              }
+            , batchReqContainers model reqStartContainer
             )
 
-        OnStartContainerResponse response ->
-            ( model
-            , case response of
-                RemoteData.Success _ ->
-                    reqContainers
+        OnStartContainerResponse containerID response ->
+            ( { model
+                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
+              }
+            , cmdForStringResponse response
+            )
 
-                _ ->
-                    Cmd.none
+        ReqStopContainer ->
+            ( { model
+                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
+              }
+            , batchReqContainers model reqStopContainer
+            )
+
+        OnStopContainerResponse containerID response ->
+            ( { model
+                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
+              }
+            , cmdForStringResponse response
             )
 
         OnLocationChange location ->
@@ -169,6 +182,26 @@ port logout : () -> Cmd msg
 port saveCreds : Auth.Credentials -> Cmd msg
 
 
+containersPageFolder : String -> ContainersPage.Model -> ContainersPage.Model
+containersPageFolder containerID nContainersPage =
+    ContainersPage.updateContainersManagementWebData nContainersPage containerID RemoteData.Loading
+
+
+batchReqContainers : Model -> (String -> Cmd Msg) -> Cmd Msg
+batchReqContainers model reqCb =
+    Cmd.batch <| List.map (\containerID -> reqCb containerID) <| Set.toList model.selectedContainers
+
+
+cmdForStringResponse : WebData CommonResponses.StringResponse -> Cmd Msg
+cmdForStringResponse response =
+    case response of
+        RemoteData.Success _ ->
+            reqContainers
+
+        _ ->
+            Cmd.none
+
+
 cmdReqContainers : Router.Route -> Cmd Msg
 cmdReqContainers newRoute =
     case newRoute of
@@ -177,7 +210,7 @@ cmdReqContainers newRoute =
                 Router.ContainerRoute containerRoute ->
                     case containerRoute of
                         Router.ContainerViewRoute ->
-                            reqContainers
+                            Debug.log "reqContainers due to ContainerViewRoute" reqContainers
 
                         _ ->
                             Cmd.none
@@ -214,7 +247,14 @@ reqStartContainer : String -> Cmd Msg
 reqStartContainer containerID =
     Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/start") Http.emptyBody CommonResponses.decodeStringResponse
         |> RemoteData.sendRequest
-        |> Cmd.map OnStartContainerResponse
+        |> Cmd.map (OnStartContainerResponse containerID)
+
+
+reqStopContainer : String -> Cmd Msg
+reqStopContainer containerID =
+    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/stop") Http.emptyBody CommonResponses.decodeStringResponse
+        |> RemoteData.sendRequest
+        |> Cmd.map (OnStopContainerResponse containerID)
 
 
 allContainersSelected : Model -> Bool
