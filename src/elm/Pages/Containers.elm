@@ -1,6 +1,5 @@
 module Pages.Containers exposing (..)
 
-import Html exposing (Html, text, div)
 import RemoteData exposing (WebData)
 import Types.Containers exposing (..)
 import Types.CommonResponses exposing (StringResponse)
@@ -42,16 +41,6 @@ updateContainersManagementWebData model key response =
     }
 
 
-tryGetContainers : Model -> List Container
-tryGetContainers model =
-    case model.containersWebdata of
-        RemoteData.Success response ->
-            response.containers
-
-        _ ->
-            []
-
-
 tryGetContainerFromId : Model -> String -> Maybe Container
 tryGetContainerFromId model id =
     case model.containersWebdata of
@@ -64,57 +53,11 @@ tryGetContainerFromId model id =
             Nothing
 
 
-containerView : Container -> Html msg
-containerView container =
-    div []
-        [ text <| List.foldr (++) ", " container.names
-        , text container.image
-        , text container.state
-        , text container.status
-        , text <| toString container.ports
-        ]
-
-
-webdataString : WebData StringResponse -> String
-webdataString wd =
-    case wd of
-        RemoteData.Success res ->
-            res.message
+tryGetContainers : Model -> List Container
+tryGetContainers model =
+    case model.containersWebdata of
+        RemoteData.Success response ->
+            response.containers
 
         _ ->
-            toString wd
-
-
-containersManagementWebDataString : Model -> List String
-containersManagementWebDataString model =
-    model.containersManagementWebData
-        |> Dict.toList
-        |> List.map
-            (\( containerId, webdata ) ->
-                case (tryGetContainerFromId model containerId) of
-                    Just container ->
-                        case
-                            (container.names
-                                |> Array.fromList
-                                |> Array.get 0
-                            )
-                        of
-                            Just name ->
-                                name ++ " - " ++ (webdataString webdata)
-
-                            Nothing ->
-                                "No name container - " ++ (webdataString webdata)
-
-                    Nothing ->
-                        "Cannot find container " ++ containerId
-            )
-
-
-portView : Port -> Html msg
-portView p =
-    div []
-        [ text <| toString p.privatePort
-
-        --, text <| toString p.publicPort
-        , text p.type_
-        ]
+            []

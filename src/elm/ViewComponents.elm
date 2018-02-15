@@ -1,4 +1,4 @@
-module Helpers exposing (..)
+module ViewComponents exposing (..)
 
 import Html exposing (Html, text, div, p, br)
 import Html.Attributes exposing (class, style, href)
@@ -14,12 +14,15 @@ import Material.Chip as Chip
 import Material.Color as Color
 import Types.Auth as Auth
 import Types.Containers as Containers
+import Types.Images as Images
+import Types.CommonResponses exposing (StringResponse)
 import Pages.Containers as ContainersPage
+import Pages.Images as ImagesPage
 import State exposing (Model, Msg)
 import Set exposing (Set)
-
-
--- HTML
+import Dict exposing (Dict)
+import Array
+import RemoteData exposing (WebData)
 
 
 centerDiv : List (Html msg) -> Html msg
@@ -30,10 +33,6 @@ centerDiv =
 breaker : List (Html msg) -> List (Html msg)
 breaker =
     List.concatMap (\htmlI -> [ htmlI, br [] [] ])
-
-
-
--- MDL
 
 
 buttonMdl : Model -> Int -> Msg -> String -> Html Msg
@@ -151,8 +150,101 @@ containersTableMdl model =
         ]
 
 
+imagesTableMdl : Model -> Html Msg
+imagesTableMdl model =
+    Table.table []
+        [ Table.thead []
+            [ Table.tr []
+                [ Table.th []
+                    [ Toggles.checkbox State.Mdl
+                        [ -1 ]
+                        model.mdl
+                        [ Options.onToggle State.ToggleAllImages
+                        , Toggles.value (State.allImagesSelected model)
+                        ]
+                        []
+                    ]
+                , Table.th [] [ text "Id" ]
+                , Table.th [] [ text "Created" ]
+                , Table.th [] [ text "RepoTags" ]
+                , Table.th [] [ text "Size" ]
+                , Table.th [] [ text "VirtualSize" ]
+                ]
+            ]
+        , Table.tbody []
+            (ImagesPage.tryGetImages model.imagesPage
+                |> List.indexedMap
+                    (\idx image ->
+                        Table.tr
+                            [ when (Set.member (Images.imageKey image) model.selectedImages) Table.selected ]
+                            [ Table.td []
+                                [ Toggles.checkbox State.Mdl
+                                    [ idx ]
+                                    model.mdl
+                                    [ Options.onToggle (State.ToggleImages image)
+                                    , Toggles.value <| Set.member (Images.imageKey image) model.selectedImages
+                                    ]
+                                    []
+                                ]
+                            , Table.td [] [ text <| toString image.id ]
+                            , Table.td [] [ text <| toString image.created ]
+                            , Table.td [] [ text <| toString image.repoTags ]
+                            , Table.td [] [ text <| toString <| toMB <| image.size ]
+                            , Table.td [] [ text <| toString <| toMB <| image.virtualSize ]
+                            ]
+                    )
+            )
+        ]
 
--- Auth
+
+containersManagementWebDataString : Model -> List String
+containersManagementWebDataString model =
+    model.containersPage.containersManagementWebData
+        |> Dict.toList
+        |> List.map
+            (\( containerId, webdata ) ->
+                case (ContainersPage.tryGetContainerFromId model.containersPage containerId) of
+                    Just container ->
+                        case
+                            (container.names
+                                |> Array.fromList
+                                |> Array.get 0
+                            )
+                        of
+                            Just name ->
+                                name ++ " - " ++ (webdataString webdata)
+
+                            Nothing ->
+                                "No name container - " ++ (webdataString webdata)
+
+                    Nothing ->
+                        "Cannot find container " ++ containerId
+            )
+
+
+imagesManagementWebDataString : Model -> List String
+imagesManagementWebDataString model =
+    model.imagesPage.imagesManagementWebData
+        |> Dict.toList
+        |> List.map
+            (\( imageId, webdata ) ->
+                case (ImagesPage.tryGetImageFromId model.imagesPage imageId) of
+                    Just image ->
+                        case
+                            (image.repoTags
+                                |> Array.fromList
+                                |> Array.get 0
+                            )
+                        of
+                            Just name ->
+                                name ++ " - " ++ (webdataString webdata)
+
+                            Nothing ->
+                                "No name image - " ++ (webdataString webdata)
+
+                    Nothing ->
+                        "Cannot find image " ++ imageId
+            )
 
 
 protectedView : Model -> Html Msg -> Html Msg
@@ -166,10 +258,21 @@ protectedView model loggedInView =
     )
 
 
-
--- Routing
-
-
 tabLabels : List ( String, String ) -> List (Tabs.Label Msg)
 tabLabels tabs =
     List.map (\( label, url ) -> Tabs.label [ Options.attribute <| href ("#/" ++ url) ] [ text label ]) tabs
+
+
+toMB : Int -> String
+toMB byte =
+    (toString <| round <| (toFloat byte) * 0.000000995) ++ " MB"
+
+
+webdataString : WebData StringResponse -> String
+webdataString wd =
+    case wd of
+        RemoteData.Success res ->
+            res.message
+
+        _ ->
+            toString wd

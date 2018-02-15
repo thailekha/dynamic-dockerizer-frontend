@@ -4,9 +4,13 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
-import Pages.Containers as ContainersPage
+
+
+--import Pages.Containers as ContainersPage
+--import Pages.Images as ImagesPage
+
 import State exposing (..)
-import Helpers exposing (..)
+import ViewComponents exposing (..)
 
 
 globalView : Model -> Html Msg
@@ -57,6 +61,12 @@ loginView model =
             ]
 
 
+e404 : x -> Html Msg
+e404 _ =
+    div []
+        [ textMdl "route not found" ]
+
+
 homeView : Model -> Html Msg
 homeView model =
     centerDiv
@@ -98,14 +108,6 @@ gantryView subRoute model =
         ]
 
 
-imagesView : Model -> Html Msg
-imagesView model =
-    div []
-        [ navMdl 1 1 model <| tabLabels Router.gantryTabs
-        , text "Images"
-        ]
-
-
 
 -- Containers subsubview
 
@@ -131,7 +133,7 @@ containersListView model =
         , br [] []
         , (let
             managementStatus =
-                ContainersPage.containersManagementWebDataString model.containersPage
+                containersManagementWebDataString model
            in
             if List.length managementStatus > 0 then
                 div []
@@ -160,10 +162,27 @@ containersCreateView model =
 
 
 
--- ROUTING
+-- Images subsubview
 
 
-e404 : x -> Html Msg
-e404 _ =
+imagesView : Model -> Html Msg
+imagesView model =
     div []
-        [ text "route not found" ]
+        [ navMdl 1 1 model <| tabLabels Router.gantryTabs
+        , br [] []
+        , (let
+            managementStatus =
+                imagesManagementWebDataString model
+           in
+            if List.length managementStatus > 0 then
+                div []
+                    [ textMdl "Management status"
+                    , listMdl managementStatus
+                    ]
+            else
+                textMdl "No management status"
+          )
+        , br [] []
+        , buttonMdl model 1 State.ReqRemoveImage "Remove"
+        , imagesTableMdl model
+        ]
