@@ -70,6 +70,8 @@ type Msg
     | OnStartContainerResponse String (WebData CommonResponses.StringResponse)
     | ReqStopContainer
     | OnStopContainerResponse String (WebData CommonResponses.StringResponse)
+    | ReqRestartContainer
+    | OnRestartContainerResponse String (WebData CommonResponses.StringResponse)
     | OnImagesResponse (WebData Images.Images)
     | ReqRemoveImage
     | OnRemoveImageResponse String (WebData CommonResponses.StringResponse)
@@ -209,6 +211,20 @@ update msg model =
             , cmdForStringResponse reqContainers response
             )
 
+        ReqRestartContainer ->
+            ( { model
+                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
+              }
+            , batchReqContainers model reqRestartContainer
+            )
+
+        OnRestartContainerResponse containerID response ->
+            ( { model
+                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
+              }
+            , cmdForStringResponse reqContainers response
+            )
+
         OnRemoveImageResponse imageID response ->
             ( { model
                 | imagesPage = ImagesPage.updateImagesManagementWebData model.imagesPage imageID response
@@ -337,6 +353,13 @@ reqStartContainer containerID =
 reqStopContainer : String -> Cmd Msg
 reqStopContainer containerID =
     Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/stop") Http.emptyBody CommonResponses.decodeStringResponse
+        |> RemoteData.sendRequest
+        |> Cmd.map (OnStopContainerResponse containerID)
+
+
+reqRestartContainer : String -> Cmd Msg
+reqRestartContainer containerID =
+    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/restart") Http.emptyBody CommonResponses.decodeStringResponse
         |> RemoteData.sendRequest
         |> Cmd.map (OnStopContainerResponse containerID)
 
