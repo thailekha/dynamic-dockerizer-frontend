@@ -147,9 +147,9 @@ containersListView model =
         , buttonMdl model 1 State.ReqStartContainer "Start"
         , buttonMdl model 2 State.ReqStopContainer "Stop"
         , buttonMdl model 3 State.ReqRestartContainer "Restart"
-        , buttonMdl model 4 State.NoChange "Pause"
-        , buttonMdl model 5 State.NoChange "Unpause"
-        , buttonMdl model 6 State.NoChange "Delete"
+        , buttonMdl model 4 State.ReqPauseContainer "Pause"
+        , buttonMdl model 5 State.ReqUnPauseContainer "Unpause"
+        , buttonMdl model 6 State.ReqDeleteContainer "Delete"
         , containersTableMdl model
         ]
 

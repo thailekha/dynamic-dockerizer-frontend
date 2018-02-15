@@ -67,11 +67,12 @@ type Msg
     | Logout
     | OnContainersResponse (WebData Containers.Containers)
     | ReqStartContainer
-    | OnStartContainerResponse String (WebData CommonResponses.StringResponse)
     | ReqStopContainer
-    | OnStopContainerResponse String (WebData CommonResponses.StringResponse)
+    | ReqPauseContainer
+    | ReqUnPauseContainer
+    | ReqDeleteContainer
     | ReqRestartContainer
-    | OnRestartContainerResponse String (WebData CommonResponses.StringResponse)
+    | OnContainerManagementResponse String (WebData CommonResponses.StringResponse)
     | OnImagesResponse (WebData Images.Images)
     | ReqRemoveImage
     | OnRemoveImageResponse String (WebData CommonResponses.StringResponse)
@@ -177,48 +178,41 @@ update msg model =
             ( { model | imagesPage = ImagesPage.updateImagesWebdata model.imagesPage response }, Cmd.none )
 
         ReqRemoveImage ->
-            ( { model
-                | imagesPage = List.foldr imagesPageFolder model.imagesPage <| Set.toList model.selectedImages
-              }
+            ( updateContainersPageFromSelectedContainers model
             , batchReqImages model reqRemoveImage
             )
 
         ReqStartContainer ->
-            ( { model
-                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
-              }
-            , batchReqContainers model reqStartContainer
-            )
-
-        OnStartContainerResponse containerID response ->
-            ( { model
-                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
-              }
-            , cmdForStringResponse reqContainers response
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "POST" "/start"
             )
 
         ReqStopContainer ->
-            ( { model
-                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
-              }
-            , batchReqContainers model reqStopContainer
-            )
-
-        OnStopContainerResponse containerID response ->
-            ( { model
-                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
-              }
-            , cmdForStringResponse reqContainers response
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "POST" "/stop"
             )
 
         ReqRestartContainer ->
-            ( { model
-                | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
-              }
-            , batchReqContainers model reqRestartContainer
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "POST" "/restart"
             )
 
-        OnRestartContainerResponse containerID response ->
+        ReqPauseContainer ->
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "POST" "/pause"
+            )
+
+        ReqUnPauseContainer ->
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "POST" "/unpause"
+            )
+
+        ReqDeleteContainer ->
+            ( updateContainersPageFromSelectedContainers model
+            , batchReqContainers model <| reqContainerContainerManagement "DELETE" "/remove"
+            )
+
+        OnContainerManagementResponse containerID response ->
             ( { model
                 | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
               }
@@ -252,9 +246,84 @@ port logout : () -> Cmd msg
 port saveCreds : Auth.Credentials -> Cmd msg
 
 
+reqLogin : Model -> Cmd Msg
+reqLogin model =
+    let
+        credentialsInput =
+            Auth.constructCredentials model.userNameInput model.accessKeyIdInput model.secretAccessKeyInput
+    in
+        Http.post
+            ("http://localhost:8083/iam/verify")
+            (Http.jsonBody <| Auth.encodeCredentials credentialsInput)
+            (Auth.decodeCredentials credentialsInput)
+            |> RemoteData.sendRequest
+            |> Cmd.map LoginResponse
+
+
+reqContainers : Cmd Msg
+reqContainers =
+    Http.get ("http://localhost:3001/api/containers/all") Containers.decodeContainers
+        |> RemoteData.sendRequest
+        |> Cmd.map OnContainersResponse
+
+
+reqContainerContainerManagement : String -> String -> String -> Cmd Msg
+reqContainerContainerManagement verb suffix containerID =
+    Http.request
+        { method = verb
+        , headers = []
+        , url = "http://localhost:3001/api/containers/" ++ containerID ++ suffix
+        , body = Http.emptyBody
+        , expect = Http.expectJson CommonResponses.decodeStringResponse
+        , timeout = Nothing
+        , withCredentials = False
+        }
+        |> RemoteData.sendRequest
+        |> Cmd.map (OnContainerManagementResponse containerID)
+
+
+reqImages : Cmd Msg
+reqImages =
+    Http.get ("http://localhost:3001/api/images/") Images.decodeImages
+        |> RemoteData.sendRequest
+        |> Cmd.map OnImagesResponse
+
+
+reqRemoveImage : String -> Cmd Msg
+reqRemoveImage imageID =
+    Http.request
+        { method = "DELETE"
+        , headers = []
+        , url = "http://localhost:3001/api/images/" ++ imageID
+        , body = Http.emptyBody
+        , expect = Http.expectJson CommonResponses.decodeStringResponse
+        , timeout = Nothing
+        , withCredentials = False
+        }
+        |> RemoteData.sendRequest
+        |> Cmd.map (OnRemoveImageResponse imageID)
+
+
+allContainersSelected : Model -> Bool
+allContainersSelected model =
+    Set.size model.selectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
+
+
+allImagesSelected : Model -> Bool
+allImagesSelected model =
+    Set.size model.selectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
+
+
 containersPageFolder : String -> ContainersPage.Model -> ContainersPage.Model
 containersPageFolder containerID nContainersPage =
     ContainersPage.updateContainersManagementWebData nContainersPage containerID RemoteData.Loading
+
+
+updateContainersPageFromSelectedContainers : Model -> Model
+updateContainersPageFromSelectedContainers model =
+    { model
+        | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
+    }
 
 
 imagesPageFolder : String -> ImagesPage.Model -> ImagesPage.Model
@@ -320,77 +389,3 @@ cmdReqImages newRoute =
 
         _ ->
             Cmd.none
-
-
-reqLogin : Model -> Cmd Msg
-reqLogin model =
-    let
-        credentialsInput =
-            Auth.constructCredentials model.userNameInput model.accessKeyIdInput model.secretAccessKeyInput
-    in
-        Http.post
-            ("http://localhost:8083/iam/verify")
-            (Http.jsonBody <| Auth.encodeCredentials credentialsInput)
-            (Auth.decodeCredentials credentialsInput)
-            |> RemoteData.sendRequest
-            |> Cmd.map LoginResponse
-
-
-reqContainers : Cmd Msg
-reqContainers =
-    Http.get ("http://localhost:3001/api/containers/all") Containers.decodeContainers
-        |> RemoteData.sendRequest
-        |> Cmd.map OnContainersResponse
-
-
-reqStartContainer : String -> Cmd Msg
-reqStartContainer containerID =
-    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/start") Http.emptyBody CommonResponses.decodeStringResponse
-        |> RemoteData.sendRequest
-        |> Cmd.map (OnStartContainerResponse containerID)
-
-
-reqStopContainer : String -> Cmd Msg
-reqStopContainer containerID =
-    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/stop") Http.emptyBody CommonResponses.decodeStringResponse
-        |> RemoteData.sendRequest
-        |> Cmd.map (OnStopContainerResponse containerID)
-
-
-reqRestartContainer : String -> Cmd Msg
-reqRestartContainer containerID =
-    Http.post ("http://localhost:3001/api/containers/" ++ containerID ++ "/restart") Http.emptyBody CommonResponses.decodeStringResponse
-        |> RemoteData.sendRequest
-        |> Cmd.map (OnStopContainerResponse containerID)
-
-
-reqImages : Cmd Msg
-reqImages =
-    Http.get ("http://localhost:3001/api/images/") Images.decodeImages
-        |> RemoteData.sendRequest
-        |> Cmd.map OnImagesResponse
-
-
-reqRemoveImage : String -> Cmd Msg
-reqRemoveImage imageID =
-    Http.request
-        { method = "DELETE"
-        , headers = []
-        , url = "http://localhost:3001/api/images/" ++ imageID
-        , body = Http.emptyBody
-        , expect = Http.expectJson CommonResponses.decodeStringResponse
-        , timeout = Nothing
-        , withCredentials = False
-        }
-        |> RemoteData.sendRequest
-        |> Cmd.map (OnRemoveImageResponse imageID)
-
-
-allContainersSelected : Model -> Bool
-allContainersSelected model =
-    Set.size model.selectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
-
-
-allImagesSelected : Model -> Bool
-allImagesSelected model =
-    Set.size model.selectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
