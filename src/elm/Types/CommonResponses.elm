@@ -1,6 +1,6 @@
 module Types.CommonResponses exposing (..)
 
-import Json.Decode exposing (string, bool, Decoder)
+import Json.Decode exposing (int, string, bool, field, map3, Decoder)
 import Json.Decode.Pipeline exposing (decode, required)
 
 
@@ -15,14 +15,24 @@ decodeStringResponse =
         |> required "message" string
 
 
-type alias StringStatusResponse =
+type alias PortResponse =
     { success : Bool
+    , statusCode : Int
     , message : String
     }
 
 
-decodeStringStatusResponse : Decoder StringStatusResponse
-decodeStringStatusResponse =
-    decode StringStatusResponse
-        |> required "success" bool
-        |> required "message" string
+decodePortResponse : Decoder PortResponse
+decodePortResponse =
+    map3 PortResponse
+        (field "success" bool)
+        (field "statusCode" int)
+        (field "message" string)
+
+
+constructErr : String -> PortResponse
+constructErr msg =
+    { success = False
+    , statusCode = -1
+    , message = msg
+    }

@@ -4,3 +4,4 @@ tmp/
 dist/
 yarn.lock
 scripts
+snippets.elm

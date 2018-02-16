@@ -1,8 +1,9 @@
 module ViewComponents exposing (..)
 
-import Html exposing (Html, text, div, p, br)
-import Html.Attributes exposing (class, style, href)
-import Material.Options as Options exposing (when)
+import Html exposing (Html, a, text, div, p, br, option, select)
+import Html.Attributes exposing (class, style, href, value, attribute)
+import Html.Events exposing (on)
+import Material.Options as Options exposing (when, css)
 import Material.Button as Button
 import Material.Textfield as Textfield
 import Material.Typography as Typo
@@ -12,10 +13,12 @@ import Material.Toggles as Toggles
 import Material.List as Lists
 import Material.Chip as Chip
 import Material.Color as Color
+import Material.Grid exposing (grid, cell, size, Device(..))
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.Images as Images
 import Types.CommonResponses exposing (StringResponse)
+import Types.ContainerCreater as ContainerCreater
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
 import State exposing (Model, Msg)
@@ -23,6 +26,7 @@ import Set exposing (Set)
 import Dict exposing (Dict)
 import Array
 import RemoteData exposing (WebData)
+import Json.Decode as Decode
 
 
 centerDiv : List (Html msg) -> Html msg
@@ -41,7 +45,24 @@ buttonMdl model index cb display =
         [ index ]
         model.mdl
         -- onClick cannot be used multiple times
-        [ Options.onClick cb ]
+        [ Button.raised
+        , Button.colored
+        , Options.onClick cb
+        ]
+        [ text display ]
+
+
+rightButtonMdl : Model -> Int -> Msg -> String -> Html Msg
+rightButtonMdl model index cb display =
+    Button.render State.Mdl
+        [ index ]
+        model.mdl
+        -- onClick cannot be used multiple times
+        [ Options.css "float" "right"
+        , Button.raised
+        , Button.colored
+        , Options.onClick cb
+        ]
         [ text display ]
 
 
@@ -71,6 +92,20 @@ textMdl display =
         [ text display ]
 
 
+textMidMdl : String -> Html Msg
+textMidMdl display =
+    Options.styled p
+        [ Typo.headline ]
+        [ text display ]
+
+
+bodyTextMdl : String -> Html Msg
+bodyTextMdl display =
+    Options.styled p
+        [ Typo.body2 ]
+        [ text display ]
+
+
 navMdl : Int -> Int -> Model -> List (Tabs.Label Msg) -> Html Msg
 navMdl index activeTabIndex model labels =
     Tabs.render State.Mdl
@@ -94,13 +129,64 @@ colorChipMdl : String -> Html Msg
 colorChipMdl str =
     Chip.span []
         [ Chip.content
-            (if str == "running" then
-                [ Color.background (Color.color Color.Green Color.A400) ]
-             else
-                []
-            )
+            [ Color.background (Color.color Color.Green Color.A400) ]
             [ text str ]
         ]
+
+
+chipMdl : String -> Html Msg
+chipMdl str =
+    Chip.span []
+        [ Chip.content
+            []
+            [ text str ]
+        ]
+
+
+gridMdl : List (Html msg) -> Html msg
+gridMdl htmlStuff =
+    grid []
+        [ cell [ size All 6 ] htmlStuff
+        ]
+
+
+whiteDivMdl : List (Html msg) -> Html msg
+whiteDivMdl htmlStuff =
+    Options.div
+        [ css "position" "relative"
+        , css "margin" "auto"
+        , css "padding-top" "2rem"
+        , css "padding-bottom" "5rem"
+        , css "padding-left" "8%"
+        , css "padding-right" "8%"
+        ]
+        htmlStuff
+
+
+yellowDivMdl : List (Html msg) -> Html msg
+yellowDivMdl htmlStuff =
+    Options.div
+        [ Color.background <| Color.color Color.Yellow Color.S50
+        , css "position" "relative"
+        , css "margin" "auto"
+        , css "padding-top" "2rem"
+        , css "padding-bottom" "5rem"
+        , css "padding-left" "8%"
+        , css "padding-right" "8%"
+        ]
+        htmlStuff
+
+
+checkbox : Model -> Bool -> Msg -> String -> Html Msg
+checkbox model checked cb display =
+    Toggles.checkbox State.Mdl
+        [ 0 ]
+        model.mdl
+        [ Options.onToggle cb
+        , Toggles.ripple
+        , Toggles.value checked
+        ]
+        [ text display ]
 
 
 containersTableMdl : Model -> Html Msg
@@ -112,15 +198,13 @@ containersTableMdl model =
                     [ Toggles.checkbox State.Mdl
                         [ -1 ]
                         model.mdl
-                        [ Options.onToggle State.ToggleAllContainers
+                        [ Options.onToggle State.Input_Gantry_ContainersPage_ToggleAll
                         , Toggles.value (State.allContainersSelected model)
                         ]
                         []
                     ]
                 , Table.th [] [ text "Name" ]
-                , Table.th [] [ text "State" ]
                 , Table.th [] [ text "Status" ]
-                , Table.th [] [ text "Ports" ]
                 , Table.th [] [ text "Image" ]
                 ]
             ]
@@ -129,24 +213,71 @@ containersTableMdl model =
                 |> List.indexedMap
                     (\idx container ->
                         Table.tr
-                            [ when (Set.member (Containers.containerKey container) model.selectedContainers) Table.selected ]
+                            [ when (Set.member (Containers.containerKey container) model.input_Gantry_ContainersPage_SelectedContainers) Table.selected ]
                             [ Table.td []
                                 [ Toggles.checkbox State.Mdl
                                     [ idx ]
                                     model.mdl
-                                    [ Options.onToggle (State.ToggleContainers container)
-                                    , Toggles.value <| Set.member (Containers.containerKey container) model.selectedContainers
+                                    [ Options.onToggle (State.Input_Gantry_ContainersPage_Toggle container)
+                                    , Toggles.value <| Set.member (Containers.containerKey container) model.input_Gantry_ContainersPage_SelectedContainers
                                     ]
                                     []
                                 ]
-                            , Table.td [] [ text <| toString container.names ]
-                            , Table.td [] [ colorChipMdl container.state ]
-                            , Table.td [] [ text <| toString container.status ]
-                            , Table.td [] [ text <| toString container.ports ]
+                            , Table.td [] [ a [ href ("#/gantry/containers/" ++ container.id) ] [ text <| toString container.names ] ]
+                            , Table.td []
+                                [ let
+                                    status =
+                                        toString container.status
+                                  in
+                                    if
+                                        (status
+                                            |> String.toLower
+                                            |> String.contains "running"
+                                        )
+                                    then
+                                        colorChipMdl status
+                                    else
+                                        text status
+                                ]
                             , Table.td [] [ text <| toString container.image ]
                             ]
                     )
             )
+        ]
+
+
+containerTableMdl : Containers.Container -> Html Msg
+containerTableMdl container =
+    Table.table []
+        [ Table.thead [] []
+        , Table.tbody []
+            [ Table.tr []
+                [ Table.td [] [ text "Status" ]
+                , Table.td []
+                    [ let
+                        status =
+                            toString container.status
+                      in
+                        if
+                            (status
+                                |> String.toLower
+                                |> String.contains "running"
+                            )
+                        then
+                            colorChipMdl status
+                        else
+                            text status
+                    ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Path" ]
+                , Table.td [] [ text <| toString container.command ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Privileged mode" ]
+                , Table.td [] [ text container.privileged ]
+                ]
+            ]
         ]
 
 
@@ -159,7 +290,7 @@ imagesTableMdl model =
                     [ Toggles.checkbox State.Mdl
                         [ -1 ]
                         model.mdl
-                        [ Options.onToggle State.ToggleAllImages
+                        [ Options.onToggle State.Input_Gantry_ImagesPage_ToggleAll
                         , Toggles.value (State.allImagesSelected model)
                         ]
                         []
@@ -176,13 +307,13 @@ imagesTableMdl model =
                 |> List.indexedMap
                     (\idx image ->
                         Table.tr
-                            [ when (Set.member (Images.imageKey image) model.selectedImages) Table.selected ]
+                            [ when (Set.member (Images.imageKey image) model.input_Gantry_ImagesPage_SelectedImages) Table.selected ]
                             [ Table.td []
                                 [ Toggles.checkbox State.Mdl
                                     [ idx ]
                                     model.mdl
-                                    [ Options.onToggle (State.ToggleImages image)
-                                    , Toggles.value <| Set.member (Images.imageKey image) model.selectedImages
+                                    [ Options.onToggle (State.Input_Gantry_ImagesPage_Toggle image)
+                                    , Toggles.value <| Set.member (Images.imageKey image) model.input_Gantry_ImagesPage_SelectedImages
                                     ]
                                     []
                                 ]
@@ -247,6 +378,49 @@ imagesManagementWebDataString model =
             )
 
 
+cssSelectBox : Html.Attribute msg
+cssSelectBox =
+    style
+        [ ( "border", "1px solid #ccc" )
+        , ( "font-size", "16px" )
+        , ( "height", "34px" )
+        , ( "width", "268px" )
+        ]
+
+
+imagesSelectBox : Model -> Html Msg
+imagesSelectBox model =
+    model.imagesPage
+        |> ImagesPage.tryGetImages
+        |> List.map
+            (\image ->
+                case
+                    (image.repoTags |> Array.fromList |> Array.get 0)
+                of
+                    Just tag ->
+                        option [ value tag ] [ text <| toString image.repoTags ]
+
+                    Nothing ->
+                        option [ value image.id ] [ text image.id ]
+            )
+        |> (::) (option [ attribute "disabled" "", attribute "selected" "", value "" ] [ text "-- select an image -- " ])
+        |> select
+            [ onChange State.Input_Gantry_ContainersPage_Create_Image
+            , cssSelectBox
+            ]
+
+
+consoleModeSelectBox : Html Msg
+consoleModeSelectBox =
+    ContainerCreater.consoleModes
+        |> List.map (\( modeCode, modeDisplay, _ ) -> option [ value modeCode ] [ text modeDisplay ])
+        |> (::) (option [ attribute "disabled" "", attribute "selected" "", value "" ] [ text "-- select a console mode -- " ])
+        |> select
+            [ onChange State.Input_Gantry_ContainersPage_Create_ConsoleMode
+            , cssSelectBox
+            ]
+
+
 protectedView : Model -> Html Msg -> Html Msg
 protectedView model loggedInView =
     (case model.loginPage.authenticationState of
@@ -256,6 +430,15 @@ protectedView model loggedInView =
         Auth.LoggedOut ->
             text "Error"
     )
+
+
+
+-- Helpers
+
+
+onChange : (String -> Msg) -> Html.Attribute Msg
+onChange tagger =
+    on "change" (Decode.map tagger Html.Events.targetValue)
 
 
 tabLabels : List ( String, String ) -> List (Tabs.Label Msg)

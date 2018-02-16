@@ -4,6 +4,7 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
+import Pages.Container as ContainerPage
 
 
 --import Pages.Containers as ContainersPage
@@ -30,8 +31,33 @@ view model =
         Router.LandingRoute ->
             homeView model
 
-        Router.GantryRoute gantrySubRoute ->
-            gantryView gantrySubRoute model
+        Router.GantryContainersViewRoute ->
+            div []
+                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+                , containersListView model
+                ]
+
+        Router.GantryContainersCreateRoute ->
+            div []
+                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+                , containersCreateView model
+                ]
+
+        Router.GantryContainerViewRoute containerID ->
+            div []
+                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+                , containerView model containerID
+                ]
+
+        Router.GantryImageRoute ->
+            div []
+                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                , navMdl 1 1 model <| tabLabels Router.gantryTabs
+                , imagesView model
+                ]
 
         Router.NotFoundRoute ->
             e404 model
@@ -54,10 +80,10 @@ loginView model =
                 RemoteData.Failure error ->
                     textMdl (toString error)
               )
-            , inputMdl model 0 UserNameInput "userName" "text" "User name"
-            , inputMdl model 1 AccessKeyIdInput "accessKeyId" "text" "Access key ID"
-            , inputMdl model 2 SecretAccessKeyInput "secretAccessKey" "password" "Secret access key"
-            , buttonMdl model 3 LoginSubmit "Login"
+            , inputMdl model 0 Input_LoginPage_UserName "userName" "text" "User name"
+            , inputMdl model 1 Input_LoginPage_AccessKeyId "accessKeyId" "text" "Access key ID"
+            , inputMdl model 2 Input_LoginPage_SecretAccessKey "secretAccessKey" "password" "Secret access key"
+            , buttonMdl model 3 Req_LoginPage_Submit "Login"
             ]
 
 
@@ -87,50 +113,13 @@ homeView model =
 
 logoutView : Model -> Html Msg
 logoutView model =
-    buttonMdl model 1 Logout "Logout"
-
-
-
--- Gantry subview
-
-
-gantryView : Router.GantrySubRoute -> Model -> Html Msg
-gantryView subRoute model =
-    div []
-        [ navMdl 0 1 model <| tabLabels Router.globalTabs
-        , (case subRoute of
-            Router.ContainerRoute containerSubRoute ->
-                containersView containerSubRoute model
-
-            Router.ImageRoute ->
-                imagesView model
-          )
-        ]
-
-
-
--- Containers subsubview
-
-
-containersView : Router.ContainerSubRoute -> Model -> Html Msg
-containersView subRoute model =
-    div []
-        [ navMdl 1 0 model <| tabLabels Router.gantryTabs
-        , (case subRoute of
-            Router.ContainerViewRoute ->
-                containersListView model
-
-            Router.ContainerCreateRoute ->
-                containersCreateView model
-          )
-        ]
+    rightButtonMdl model 1 Req_LoginPage_Logout "Logout"
 
 
 containersListView : Model -> Html Msg
 containersListView model =
-    div []
-        [ navMdl 2 0 model <| tabLabels Router.containerTabs
-        , br [] []
+    whiteDivMdl
+        [ navMdl 2 0 model <| tabLabels Router.containersTabs
         , (let
             managementStatus =
                 containersManagementWebDataString model
@@ -143,34 +132,94 @@ containersListView model =
             else
                 textMdl "No management status"
           )
-        , br [] []
-        , buttonMdl model 1 State.ReqStartContainer "Start"
-        , buttonMdl model 2 State.ReqStopContainer "Stop"
-        , buttonMdl model 3 State.ReqRestartContainer "Restart"
-        , buttonMdl model 4 State.ReqPauseContainer "Pause"
-        , buttonMdl model 5 State.ReqUnPauseContainer "Unpause"
-        , buttonMdl model 6 State.ReqDeleteContainer "Delete"
-        , containersTableMdl model
+        , buttonMdl model 1 State.Req_Gantry_ContainersPage_Start "Start"
+        , buttonMdl model 2 State.Req_Gantry_ContainersPage_Stop "Stop"
+        , buttonMdl model 3 State.Req_Gantry_ContainersPage_Restart "Restart"
+        , buttonMdl model 4 State.Req_Gantry_ContainersPage_Pause "Pause"
+        , buttonMdl model 5 State.Req_Gantry_ContainersPage_UnPause "Unpause"
+        , buttonMdl model 6 State.Req_Gantry_ContainersPage_Delete "Delete"
+        , yellowDivMdl [ containersTableMdl model ]
         ]
+
+
+containerView : Model -> String -> Html Msg
+containerView model containerID =
+    case ContainerPage.tryGetContainer model.containerPage of
+        Ok foundContainer ->
+            yellowDivMdl
+                [ case model.containerPage.containerManagementWebData of
+                    RemoteData.NotAsked ->
+                        br [] []
+
+                    RemoteData.Loading ->
+                        textMdl "Loading ..."
+
+                    RemoteData.Success webdata ->
+                        textMdl <| toString webdata
+
+                    RemoteData.Failure error ->
+                        textMdl <| toString error
+                , buttonMdl model 1 (State.Req_Gantry_ContainerPage_Start foundContainer.id) "Start"
+                , buttonMdl model 2 (State.Req_Gantry_ContainerPage_Stop foundContainer.id) "Stop"
+                , buttonMdl model 3 (State.Req_Gantry_ContainerPage_Restart foundContainer.id) "Restart"
+                , buttonMdl model 4 (State.Req_Gantry_ContainerPage_Pause foundContainer.id) "Pause"
+                , buttonMdl model 5 (State.Req_Gantry_ContainerPage_UnPause foundContainer.id) "Unpause"
+                , textMdl "Information"
+                , containerTableMdl foundContainer
+                ]
+
+        Err err ->
+            textMdl <| toString err
 
 
 containersCreateView : Model -> Html Msg
 containersCreateView model =
-    div []
-        [ navMdl 2 1 model <| tabLabels Router.containerTabs
+    whiteDivMdl
+        [ navMdl 2 1 model <| tabLabels Router.containersTabs
+        , yellowDivMdl
+            [ case model.containerCreatePage.containerCreateWebdata of
+                RemoteData.NotAsked ->
+                    br [] []
+
+                RemoteData.Loading ->
+                    textMdl "Loading ..."
+
+                RemoteData.Success webdata ->
+                    textMdl <| toString webdata
+
+                RemoteData.Failure error ->
+                    textMdl <| toString error
+            , textMidMdl "Details"
+            , rightButtonMdl model 0 State.Req_Gantry_ContainersPage_Create "Create"
+            , br [] []
+            , inputMdl model 0 Input_Gantry_ContainersPage_Create_Name "name" "text" "Name"
+            , br [] []
+            , checkbox model model.input_Gantry_ContainersPage_Create_Privileged Input_Gantry_ContainersPage_Create_Privileged "Privileged Mode"
+            ]
+        , yellowDivMdl
+            [ textMidMdl "Image"
+            , imagesSelectBox model
+            ]
+        , yellowDivMdl
+            [ textMidMdl "Console mode"
+            , consoleModeSelectBox
+            ]
+        , yellowDivMdl
+            [ textMidMdl "Port mappings"
+            , model.input_Gantry_ContainersPage_Create_Bindings
+                |> List.concatMap (\( c, h ) -> [ chipMdl ("Container | " ++ c), chipMdl ("Host | " ++ h), br [] [] ])
+                |> div []
+            , inputMdl model 2 Input_Gantry_ContainersPage_Create_Container_Port "containerPort" "text" "Container port"
+            , inputMdl model 3 Input_Gantry_ContainersPage_Create_Host_Port "hostPort" "text" "Host port"
+            , buttonMdl model 1 (InputUpdate_Gantry_ContainersPage_Create_Bindings ( model.input_Gantry_ContainersPage_Create_Container_Port, model.input_Gantry_ContainersPage_Create_Host_Port )) "Add"
+            ]
         ]
-
-
-
--- Images subsubview
 
 
 imagesView : Model -> Html Msg
 imagesView model =
-    div []
-        [ navMdl 1 1 model <| tabLabels Router.gantryTabs
-        , br [] []
-        , (let
+    yellowDivMdl
+        [ (let
             managementStatus =
                 imagesManagementWebDataString model
            in
@@ -183,6 +232,6 @@ imagesView model =
                 textMdl "No management status"
           )
         , br [] []
-        , buttonMdl model 1 State.ReqRemoveImage "Remove"
+        , buttonMdl model 1 State.Req_Gantry_ImagesPage_Remove "Remove"
         , imagesTableMdl model
         ]

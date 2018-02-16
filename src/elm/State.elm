@@ -4,9 +4,12 @@ import Http
 import RemoteData exposing (WebData)
 import Pages.Login as LoginPage
 import Pages.Containers as ContainersPage
+import Pages.ContainerCreate as ContainerCreatePage
+import Pages.Container as ContainerPage
 import Pages.Images as ImagesPage
 import Types.Auth as Auth
 import Types.Containers as Containers
+import Types.ContainerCreater as ContainerCreater
 import Types.CommonResponses as CommonResponses
 import Types.Images as Images
 import Material
@@ -14,17 +17,33 @@ import Navigation exposing (Location)
 import Pages.Router as Router
 import Set exposing (Set)
 import Debug
+import Json.Encode exposing (Value)
+import Json.Decode exposing (decodeValue)
+import Dict
 
 
 type alias Model =
     { loginPage : LoginPage.Model
     , containersPage : ContainersPage.Model
+    , containerCreatePage : ContainerCreatePage.Model
+    , containerPage : ContainerPage.Model
     , imagesPage : ImagesPage.Model
-    , userNameInput : String
-    , accessKeyIdInput : String
-    , secretAccessKeyInput : String
-    , selectedContainers : Set String
-    , selectedImages : Set String
+    , input_LoginPage_UserName : String
+    , input_LoginPage_AccessKeyId : String
+    , input_LoginPage_SecretAccessKey : String
+    , input_Gantry_ContainersPage_SelectedContainers : Set String
+    , input_Gantry_ImagesPage_SelectedImages : Set String
+    , input_Gantry_ContainersPage_Create_Name : String
+    , input_Gantry_ContainersPage_Create_Image : String
+    , input_Gantry_ContainersPage_Create_Container_Port : String
+    , input_Gantry_ContainersPage_Create_Host_Port : String
+    , input_Gantry_ContainersPage_Create_Bindings : List ( String, String )
+    , input_Gantry_ContainersPage_Create_Binds : List String
+    , input_Gantry_ContainersPage_Create_Privileged : Bool
+    , input_Gantry_ContainersPage_Create_OpenStdin : Bool
+    , input_Gantry_ContainersPage_Create_Tty : Bool
+    , input_Gantry_ImagesPage : String
+    , res_Gantry_ContainersPage_Create : WebData CommonResponses.PortResponse
     , route : Router.Route
     , mdl : Material.Model
     }
@@ -34,12 +53,25 @@ initModel : Maybe Auth.Credentials -> Router.Route -> Model
 initModel initialUser initialRoute =
     { loginPage = LoginPage.init initialUser
     , containersPage = ContainersPage.init
+    , containerCreatePage = ContainerCreatePage.init
+    , containerPage = ContainerPage.init
     , imagesPage = ImagesPage.init
-    , userNameInput = ""
-    , accessKeyIdInput = ""
-    , secretAccessKeyInput = ""
-    , selectedContainers = Set.empty
-    , selectedImages = Set.empty
+    , input_LoginPage_UserName = ""
+    , input_LoginPage_AccessKeyId = ""
+    , input_LoginPage_SecretAccessKey = ""
+    , input_Gantry_ContainersPage_SelectedContainers = Set.empty
+    , input_Gantry_ImagesPage_SelectedImages = Set.empty
+    , input_Gantry_ContainersPage_Create_Name = ""
+    , input_Gantry_ContainersPage_Create_Image = ""
+    , input_Gantry_ContainersPage_Create_Container_Port = ""
+    , input_Gantry_ContainersPage_Create_Host_Port = ""
+    , input_Gantry_ContainersPage_Create_Bindings = []
+    , input_Gantry_ContainersPage_Create_Binds = []
+    , input_Gantry_ContainersPage_Create_Privileged = False
+    , input_Gantry_ContainersPage_Create_OpenStdin = True
+    , input_Gantry_ContainersPage_Create_Tty = True
+    , input_Gantry_ImagesPage = ""
+    , res_Gantry_ContainersPage_Create = RemoteData.NotAsked
     , route = initialRoute
     , mdl = Material.model
     }
@@ -55,51 +87,71 @@ init initialUser location =
 
 
 type Msg
-    = UserNameInput String
-    | AccessKeyIdInput String
-    | SecretAccessKeyInput String
-    | ToggleAllContainers
-    | ToggleContainers Containers.Container
-    | ToggleAllImages
-    | ToggleImages Images.Image
-    | LoginSubmit
-    | LoginResponse (WebData Auth.Credentials)
-    | Logout
-    | OnContainersResponse (WebData Containers.Containers)
-    | ReqStartContainer
-    | ReqStopContainer
-    | ReqPauseContainer
-    | ReqUnPauseContainer
-    | ReqDeleteContainer
-    | ReqRestartContainer
-    | OnContainerManagementResponse String (WebData CommonResponses.StringResponse)
-    | OnImagesResponse (WebData Images.Images)
-    | ReqRemoveImage
-    | OnRemoveImageResponse String (WebData CommonResponses.StringResponse)
-    | OnLocationChange Location
-    | Mdl (Material.Msg Msg)
-    | NoChange
+    = Input_LoginPage_UserName String
+    | Input_LoginPage_AccessKeyId String
+    | Input_LoginPage_SecretAccessKey String
+    | Req_LoginPage_Submit
+    | Res_LoginPage_Login (WebData Auth.Credentials)
+    | Req_LoginPage_Logout
+    | Input_Gantry_ContainersPage_ToggleAll
+    | Input_Gantry_ContainersPage_Toggle Containers.Container
+    | Res_Gantry_ContainersPage_Containers Value
+    | Req_Gantry_ContainersPage_Start
+    | Req_Gantry_ContainersPage_Stop
+    | Req_Gantry_ContainersPage_Pause
+    | Req_Gantry_ContainersPage_UnPause
+    | Req_Gantry_ContainersPage_Delete
+    | Req_Gantry_ContainersPage_Restart
+    | Req_Gantry_ContainersPage_Create
+    | Res_Gantry_ContainersPage_Create Value
+    | Res_Gantry_ContainersPage_Management String (WebData CommonResponses.StringResponse)
+    | Res_Gantry_ContainerPage_Management String (WebData CommonResponses.StringResponse)
+    | Input_Gantry_ContainersPage_Create_Name String
+    | Input_Gantry_ContainersPage_Create_Image String
+    | Input_Gantry_ContainersPage_Create_Container_Port String
+    | Input_Gantry_ContainersPage_Create_Host_Port String
+    | InputUpdate_Gantry_ContainersPage_Create_Bindings ( String, String )
+    | InputUpdate_Gantry_ContainersPage_Create_Binds String
+    | InputDelete_Gantry_ContainersPage_Create_Bindings ( String, String )
+    | InputDelete_Gantry_ContainersPage_Create_Binds String
+    | Input_Gantry_ContainersPage_Create_Privileged
+    | Input_Gantry_ContainersPage_Create_ConsoleMode String
+    | Res_Gantry_ContainerPage_Get Value
+    | Req_Gantry_ContainerPage_Start String
+    | Req_Gantry_ContainerPage_Stop String
+    | Req_Gantry_ContainerPage_Restart String
+    | Req_Gantry_ContainerPage_Pause String
+    | Req_Gantry_ContainerPage_UnPause String
+    | Res_Gantry_ImagesPage_Get (WebData Images.Images)
+    | Input_Gantry_ImagesPage_ToggleAll
+    | Input_Gantry_ImagesPage_Toggle Images.Image
+    | Req_Gantry_ImagesPage_Remove
+    | Res_Gantry_ImagesPage_Remove String (WebData CommonResponses.StringResponse)
+    | OnLocationChange Location -- routing
+    | Mdl (Material.Msg Msg) -- styling
+    | NoChange -- for dev
+    | NoChangeText String -- for dev
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        UserNameInput str ->
-            ( { model | userNameInput = str }, Cmd.none )
+        Input_LoginPage_UserName str ->
+            ( { model | input_LoginPage_UserName = str }, Cmd.none )
 
-        AccessKeyIdInput str ->
-            ( { model | accessKeyIdInput = str }, Cmd.none )
+        Input_LoginPage_AccessKeyId str ->
+            ( { model | input_LoginPage_AccessKeyId = str }, Cmd.none )
 
-        SecretAccessKeyInput str ->
-            ( { model | secretAccessKeyInput = str }, Cmd.none )
+        Input_LoginPage_SecretAccessKey str ->
+            ( { model | input_LoginPage_SecretAccessKey = str }, Cmd.none )
 
-        ToggleAllContainers ->
+        Input_Gantry_ContainersPage_ToggleAll ->
             let
                 fetchedContainers =
                     ContainersPage.tryGetContainers model.containersPage
             in
                 { model
-                    | selectedContainers =
+                    | input_Gantry_ContainersPage_SelectedContainers =
                         if allContainersSelected model then
                             Set.empty
                         else
@@ -109,23 +161,23 @@ update msg model =
                 }
                     ! []
 
-        ToggleContainers container ->
+        Input_Gantry_ContainersPage_Toggle container ->
             { model
-                | selectedContainers =
-                    if Set.member (Containers.containerKey container) model.selectedContainers then
-                        Set.remove (Containers.containerKey container) model.selectedContainers
+                | input_Gantry_ContainersPage_SelectedContainers =
+                    if Set.member (Containers.containerKey container) model.input_Gantry_ContainersPage_SelectedContainers then
+                        Set.remove (Containers.containerKey container) model.input_Gantry_ContainersPage_SelectedContainers
                     else
-                        Set.insert (Containers.containerKey container) model.selectedContainers
+                        Set.insert (Containers.containerKey container) model.input_Gantry_ContainersPage_SelectedContainers
             }
                 ! []
 
-        ToggleAllImages ->
+        Input_Gantry_ImagesPage_ToggleAll ->
             let
                 fetchedImages =
                     ImagesPage.tryGetImages model.imagesPage
             in
                 { model
-                    | selectedImages =
+                    | input_Gantry_ImagesPage_SelectedImages =
                         if allImagesSelected model then
                             Set.empty
                         else
@@ -135,20 +187,20 @@ update msg model =
                 }
                     ! []
 
-        ToggleImages image ->
+        Input_Gantry_ImagesPage_Toggle image ->
             { model
-                | selectedImages =
-                    if Set.member (Images.imageKey image) model.selectedImages then
-                        Set.remove (Images.imageKey image) model.selectedImages
+                | input_Gantry_ImagesPage_SelectedImages =
+                    if Set.member (Images.imageKey image) model.input_Gantry_ImagesPage_SelectedImages then
+                        Set.remove (Images.imageKey image) model.input_Gantry_ImagesPage_SelectedImages
                     else
-                        Set.insert (Images.imageKey image) model.selectedImages
+                        Set.insert (Images.imageKey image) model.input_Gantry_ImagesPage_SelectedImages
             }
                 ! []
 
-        LoginSubmit ->
+        Req_LoginPage_Submit ->
             ( model, reqLogin model )
 
-        LoginResponse response ->
+        Res_LoginPage_Login response ->
             ( { model
                 | loginPage = LoginPage.updateCredentialsWebdata model.loginPage response
               }
@@ -161,65 +213,308 @@ update msg model =
               )
             )
 
-        Logout ->
+        Req_LoginPage_Logout ->
             ( { model
                 | loginPage = LoginPage.init Nothing
-                , userNameInput = ""
-                , accessKeyIdInput = ""
-                , secretAccessKeyInput = ""
+                , input_LoginPage_UserName = ""
+                , input_LoginPage_AccessKeyId = ""
+                , input_LoginPage_SecretAccessKey = ""
               }
             , logout ()
             )
 
-        OnContainersResponse response ->
-            ( { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage response }, Cmd.none )
+        Res_Gantry_ContainersPage_Containers response ->
+            let
+                nWebdata =
+                    (case
+                        decodeValue CommonResponses.decodePortResponse response
+                     of
+                        Ok decodedResponse ->
+                            if decodedResponse.success then
+                                (case
+                                    decodeValue Containers.decodeContainers response
+                                 of
+                                    Ok decodedContainers ->
+                                        RemoteData.succeed decodedContainers
 
-        OnImagesResponse response ->
-            ( { model | imagesPage = ImagesPage.updateImagesWebdata model.imagesPage response }, Cmd.none )
+                                    Err message ->
+                                        badPayloadHttp message
+                                )
+                            else
+                                badPayloadHttp decodedResponse.message
 
-        ReqRemoveImage ->
+                        Err message ->
+                            badPayloadHttp message
+                    )
+            in
+                { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage nWebdata } ! []
+
+        Res_Gantry_ContainerPage_Get response ->
+            case
+                decodeValue CommonResponses.decodePortResponse response
+            of
+                Ok decodedResponse ->
+                    if decodedResponse.success then
+                        (case
+                            decodeValue Containers.decodeContainerGet response
+                         of
+                            Ok decodedContainer ->
+                                { model
+                                    | containerPage =
+                                        RemoteData.succeed decodedContainer
+                                            |> ContainerPage.updateContainerWebdata model.containerPage
+                                }
+                                    ! []
+
+                            Err message ->
+                                { model
+                                    | containerPage =
+                                        badPayloadHttp message
+                                            |> ContainerPage.updateContainerWebdata model.containerPage
+                                }
+                                    ! []
+                        )
+                    else
+                        { model
+                            | containerPage =
+                                badPayloadHttp decodedResponse.message
+                                    |> ContainerPage.updateContainerWebdata model.containerPage
+                        }
+                            ! []
+
+                Err message ->
+                    { model
+                        | containerPage =
+                            badPayloadHttp message
+                                |> ContainerPage.updateContainerWebdata model.containerPage
+                    }
+                        ! []
+
+        Res_Gantry_ImagesPage_Get response ->
+            ( { model
+                | imagesPage = ImagesPage.updateImagesWebdata model.imagesPage response
+              }
+            , Cmd.none
+            )
+
+        Req_Gantry_ImagesPage_Remove ->
             ( updateContainersPageFromSelectedContainers model
             , batchReqImages model reqRemoveImage
             )
 
-        ReqStartContainer ->
+        Req_Gantry_ContainersPage_Start ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "POST" "/start"
+            , batchReqContainers model <| reqContainerManagement "POST" "/start"
             )
 
-        ReqStopContainer ->
+        Req_Gantry_ContainersPage_Stop ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "POST" "/stop"
+            , batchReqContainers model <| reqContainerManagement "POST" "/stop"
             )
 
-        ReqRestartContainer ->
+        Req_Gantry_ContainersPage_Restart ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "POST" "/restart"
+            , batchReqContainers model <| reqContainerManagement "POST" "/restart"
             )
 
-        ReqPauseContainer ->
+        Req_Gantry_ContainersPage_Pause ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "POST" "/pause"
+            , batchReqContainers model <| reqContainerManagement "POST" "/pause"
             )
 
-        ReqUnPauseContainer ->
+        Req_Gantry_ContainersPage_UnPause ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "POST" "/unpause"
+            , batchReqContainers model <| reqContainerManagement "POST" "/unpause"
             )
 
-        ReqDeleteContainer ->
+        Req_Gantry_ContainersPage_Delete ->
             ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerContainerManagement "DELETE" "/remove"
+            , batchReqContainers model <| reqContainerManagement "DELETE" "/remove"
             )
 
-        OnContainerManagementResponse containerID response ->
+        Req_Gantry_ContainerPage_Start containerID ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage RemoteData.Loading
+              }
+            , reqContainerManagement2 "POST" "/start" containerID
+            )
+
+        Req_Gantry_ContainerPage_Stop containerID ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage RemoteData.Loading
+              }
+            , reqContainerManagement2 "POST" "/stop" containerID
+            )
+
+        Req_Gantry_ContainerPage_Restart containerID ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage RemoteData.Loading
+              }
+            , reqContainerManagement2 "POST" "/restart" containerID
+            )
+
+        Req_Gantry_ContainerPage_Pause containerID ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage RemoteData.Loading
+              }
+            , reqContainerManagement2 "POST" "/pause" containerID
+            )
+
+        Req_Gantry_ContainerPage_UnPause containerID ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage RemoteData.Loading
+              }
+            , reqContainerManagement2 "POST" "/unpause" containerID
+            )
+
+        Input_Gantry_ContainersPage_Create_Name str ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Name = str
+              }
+            , Cmd.none
+            )
+
+        Input_Gantry_ContainersPage_Create_Image imageID ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Image = imageID
+              }
+            , Cmd.none
+            )
+
+        Input_Gantry_ContainersPage_Create_Container_Port str ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Container_Port = str
+              }
+            , Cmd.none
+            )
+
+        Input_Gantry_ContainersPage_Create_Host_Port str ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Host_Port = str
+              }
+            , Cmd.none
+            )
+
+        InputUpdate_Gantry_ContainersPage_Create_Bindings ( containerPort, hostPort ) ->
+            let
+                ( parsedContainerPort, parsedHostPort ) =
+                    ( String.toInt containerPort, String.toInt hostPort )
+            in
+                case parsedContainerPort of
+                    Ok _ ->
+                        case parsedHostPort of
+                            Ok _ ->
+                                ( { model
+                                    | input_Gantry_ContainersPage_Create_Bindings =
+                                        Set.toList <| Set.fromList <| ( containerPort, hostPort ) :: model.input_Gantry_ContainersPage_Create_Bindings
+                                  }
+                                , Cmd.none
+                                )
+
+                            Err _ ->
+                                ( model, Cmd.none )
+
+                    Err _ ->
+                        ( model, Cmd.none )
+
+        InputDelete_Gantry_ContainersPage_Create_Bindings ( containerPort, hostPort ) ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Bindings =
+                    Set.toList <| Set.remove ( containerPort, hostPort ) <| Set.fromList <| model.input_Gantry_ContainersPage_Create_Bindings
+              }
+            , Cmd.none
+            )
+
+        InputUpdate_Gantry_ContainersPage_Create_Binds bind ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Binds = Set.toList <| Set.fromList <| bind :: model.input_Gantry_ContainersPage_Create_Binds
+              }
+            , Cmd.none
+            )
+
+        InputDelete_Gantry_ContainersPage_Create_Binds bind ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Binds = Set.toList <| Set.remove bind <| Set.fromList model.input_Gantry_ContainersPage_Create_Binds
+              }
+            , Cmd.none
+            )
+
+        Input_Gantry_ContainersPage_Create_Privileged ->
+            ( { model
+                | input_Gantry_ContainersPage_Create_Privileged = not model.input_Gantry_ContainersPage_Create_Privileged
+              }
+            , Cmd.none
+            )
+
+        Input_Gantry_ContainersPage_Create_ConsoleMode mode ->
+            let
+                modeValue =
+                    ContainerCreater.consoleValue mode
+            in
+                case modeValue of
+                    Just ( std, tty ) ->
+                        ( { model
+                            | input_Gantry_ContainersPage_Create_OpenStdin = std
+                            , input_Gantry_ContainersPage_Create_Tty = tty
+                          }
+                        , Cmd.none
+                        )
+
+                    Nothing ->
+                        ( model, Cmd.none )
+
+        Req_Gantry_ContainersPage_Create ->
+            ( { model
+                | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage RemoteData.Loading
+              }
+            , reqCreateContainer <|
+                ContainerCreater.encodeContainerCreater
+                    model.input_Gantry_ContainersPage_Create_Name
+                    model.input_Gantry_ContainersPage_Create_Image
+                    model.input_Gantry_ContainersPage_Create_Bindings
+                    model.input_Gantry_ContainersPage_Create_Binds
+                    model.input_Gantry_ContainersPage_Create_Privileged
+                    model.input_Gantry_ContainersPage_Create_OpenStdin
+                    model.input_Gantry_ContainersPage_Create_Tty
+            )
+
+        Res_Gantry_ContainersPage_Create response ->
+            let
+                nWebdata =
+                    (case
+                        decodeValue CommonResponses.decodePortResponse response
+                     of
+                        Ok decodedResponse ->
+                            if decodedResponse.success then
+                                RemoteData.succeed decodedResponse
+                            else
+                                badPayloadHttp decodedResponse.message
+
+                        Err message ->
+                            badPayloadHttp message
+                    )
+            in
+                { model
+                    | res_Gantry_ContainersPage_Create = nWebdata
+                    , containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage nWebdata
+                }
+                    ! []
+
+        Res_Gantry_ContainersPage_Management containerID response ->
             ( { model
                 | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
               }
-            , cmdForStringResponse reqContainers response
+            , cmdForStringResponse (reqContainers ()) response
             )
 
-        OnRemoveImageResponse imageID response ->
+        Res_Gantry_ContainerPage_Management containerID response ->
+            ( { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage response
+              }
+            , reqContainer containerID
+            )
+
+        Res_Gantry_ImagesPage_Remove imageID response ->
             ( { model
                 | imagesPage = ImagesPage.updateImagesManagementWebData model.imagesPage imageID response
               }
@@ -239,6 +534,9 @@ update msg model =
         NoChange ->
             ( model, Cmd.none )
 
+        NoChangeText _ ->
+            ( model, Cmd.none )
+
 
 port logout : () -> Cmd msg
 
@@ -246,29 +544,63 @@ port logout : () -> Cmd msg
 port saveCreds : Auth.Credentials -> Cmd msg
 
 
+port reqContainers : () -> Cmd msg
+
+
+port onContainersResponse : (Value -> msg) -> Sub msg
+
+
+port reqContainer : String -> Cmd msg
+
+
+port onContainerResponse : (Value -> msg) -> Sub msg
+
+
+port reqCreateContainer : Value -> Cmd msg
+
+
+port onCreateContainerResponse : (Value -> msg) -> Sub msg
+
+
+badPayloadHttp : String -> RemoteData.RemoteData Http.Error a
+badPayloadHttp body =
+    RemoteData.mapError
+        (Http.Response "" { code = -1, message = "" } Dict.empty body
+            |> Http.BadPayload "Cannot decode payload from port"
+            |> always
+        )
+        (RemoteData.Failure "")
+
+
+subscriptions : a -> Sub Msg
+subscriptions model =
+    Sub.batch
+        [ onContainersResponse Res_Gantry_ContainersPage_Containers
+        , onCreateContainerResponse Res_Gantry_ContainersPage_Create
+        , onContainerResponse Res_Gantry_ContainerPage_Get
+        ]
+
+
 reqLogin : Model -> Cmd Msg
 reqLogin model =
     let
         credentialsInput =
-            Auth.constructCredentials model.userNameInput model.accessKeyIdInput model.secretAccessKeyInput
+            Auth.constructCredentials model.input_LoginPage_UserName model.input_LoginPage_AccessKeyId model.input_LoginPage_SecretAccessKey
     in
         Http.post
             ("http://localhost:8083/iam/verify")
             (Http.jsonBody <| Auth.encodeCredentials credentialsInput)
             (Auth.decodeCredentials credentialsInput)
             |> RemoteData.sendRequest
-            |> Cmd.map LoginResponse
+            |> Cmd.map Res_LoginPage_Login
 
 
-reqContainers : Cmd Msg
-reqContainers =
-    Http.get ("http://localhost:3001/api/containers/all") Containers.decodeContainers
-        |> RemoteData.sendRequest
-        |> Cmd.map OnContainersResponse
+
+-- Containers
 
 
-reqContainerContainerManagement : String -> String -> String -> Cmd Msg
-reqContainerContainerManagement verb suffix containerID =
+reqContainerManagement : String -> String -> String -> Cmd Msg
+reqContainerManagement verb suffix containerID =
     Http.request
         { method = verb
         , headers = []
@@ -279,14 +611,33 @@ reqContainerContainerManagement verb suffix containerID =
         , withCredentials = False
         }
         |> RemoteData.sendRequest
-        |> Cmd.map (OnContainerManagementResponse containerID)
+        |> Cmd.map (Res_Gantry_ContainersPage_Management containerID)
+
+
+reqContainerManagement2 : String -> String -> String -> Cmd Msg
+reqContainerManagement2 verb suffix containerID =
+    Http.request
+        { method = verb
+        , headers = []
+        , url = "http://localhost:3001/api/containers/" ++ containerID ++ suffix
+        , body = Http.emptyBody
+        , expect = Http.expectJson CommonResponses.decodeStringResponse
+        , timeout = Nothing
+        , withCredentials = False
+        }
+        |> RemoteData.sendRequest
+        |> Cmd.map (Res_Gantry_ContainerPage_Management containerID)
+
+
+
+-- Image
 
 
 reqImages : Cmd Msg
 reqImages =
     Http.get ("http://localhost:3001/api/images/") Images.decodeImages
         |> RemoteData.sendRequest
-        |> Cmd.map OnImagesResponse
+        |> Cmd.map Res_Gantry_ImagesPage_Get
 
 
 reqRemoveImage : String -> Cmd Msg
@@ -301,17 +652,17 @@ reqRemoveImage imageID =
         , withCredentials = False
         }
         |> RemoteData.sendRequest
-        |> Cmd.map (OnRemoveImageResponse imageID)
+        |> Cmd.map (Res_Gantry_ImagesPage_Remove imageID)
 
 
 allContainersSelected : Model -> Bool
 allContainersSelected model =
-    Set.size model.selectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
+    Set.size model.input_Gantry_ContainersPage_SelectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
 
 
 allImagesSelected : Model -> Bool
 allImagesSelected model =
-    Set.size model.selectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
+    Set.size model.input_Gantry_ImagesPage_SelectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
 
 
 containersPageFolder : String -> ContainersPage.Model -> ContainersPage.Model
@@ -322,7 +673,7 @@ containersPageFolder containerID nContainersPage =
 updateContainersPageFromSelectedContainers : Model -> Model
 updateContainersPageFromSelectedContainers model =
     { model
-        | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.selectedContainers
+        | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.input_Gantry_ContainersPage_SelectedContainers
     }
 
 
@@ -333,12 +684,12 @@ imagesPageFolder imageID nImagesPage =
 
 batchReqContainers : Model -> (String -> Cmd Msg) -> Cmd Msg
 batchReqContainers model reqCb =
-    Cmd.batch <| List.map (\containerID -> reqCb containerID) <| Set.toList model.selectedContainers
+    Cmd.batch <| List.map (\containerID -> reqCb containerID) <| Set.toList model.input_Gantry_ContainersPage_SelectedContainers
 
 
 batchReqImages : Model -> (String -> Cmd Msg) -> Cmd Msg
 batchReqImages model reqCb =
-    Cmd.batch <| List.map (\imageID -> reqCb imageID) <| Set.toList model.selectedImages
+    Cmd.batch <| List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
 
 
 cmdForStringResponse : Cmd Msg -> WebData CommonResponses.StringResponse -> Cmd Msg
@@ -353,39 +704,18 @@ cmdForStringResponse cb response =
 
 cmdReqs : Router.Route -> Cmd Msg
 cmdReqs newRoute =
-    Cmd.batch [ (cmdReqContainers newRoute), (cmdReqImages newRoute) ]
-
-
-cmdReqContainers : Router.Route -> Cmd Msg
-cmdReqContainers newRoute =
     case newRoute of
-        Router.GantryRoute gantryRoute ->
-            case gantryRoute of
-                Router.ContainerRoute containerRoute ->
-                    case containerRoute of
-                        Router.ContainerViewRoute ->
-                            Debug.log "reqContainers due to ContainerViewRoute" reqContainers
+        Router.GantryContainersViewRoute ->
+            Debug.log "reqContainers due to GantryContainersViewRoute" (reqContainers ())
 
-                        _ ->
-                            Cmd.none
+        Router.GantryContainerViewRoute containerID ->
+            Debug.log "reqContainer due to GantryContainerViewRoute" (reqContainer containerID)
 
-                _ ->
-                    Cmd.none
+        Router.GantryContainersCreateRoute ->
+            Debug.log "reqContainers due to GantryContainersCreateRoute" Cmd.batch [ (reqContainers ()), reqImages ]
 
-        _ ->
-            Cmd.none
-
-
-cmdReqImages : Router.Route -> Cmd Msg
-cmdReqImages newRoute =
-    case newRoute of
-        Router.GantryRoute gantryRoute ->
-            case gantryRoute of
-                Router.ImageRoute ->
-                    Debug.log "reqContainers due to ImageRoute" reqImages
-
-                _ ->
-                    Cmd.none
+        Router.GantryImageRoute ->
+            Debug.log "reqImages due to GantryImageRoute" reqImages
 
         _ ->
             Cmd.none

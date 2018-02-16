@@ -4,19 +4,12 @@ import Navigation exposing (Location)
 import UrlParser exposing (..)
 
 
-type ContainerSubRoute
-    = ContainerViewRoute
-    | ContainerCreateRoute
-
-
-type GantrySubRoute
-    = ContainerRoute ContainerSubRoute
-    | ImageRoute
-
-
 type Route
     = LandingRoute
-    | GantryRoute GantrySubRoute
+    | GantryContainersViewRoute
+    | GantryContainersCreateRoute
+    | GantryContainerViewRoute String
+    | GantryImageRoute
     | NotFoundRoute
 
 
@@ -24,30 +17,31 @@ matchers : Parser (Route -> a) a
 matchers =
     oneOf
         [ map LandingRoute top
-        , (map <| GantryRoute <| ContainerRoute ContainerViewRoute) <| s "gantry" </> s "container"
-        , (map <| GantryRoute <| ContainerRoute ContainerCreateRoute) <| s "gantry" </> s "container" </> s "create"
-        , (map <| GantryRoute ImageRoute) <| s "gantry" </> s "image"
+        , map GantryContainersViewRoute <| s "gantry" </> s "containers"
+        , map GantryContainersCreateRoute <| s "gantry" </> s "containers" </> s "create"
+        , map GantryImageRoute <| s "gantry" </> s "image"
+        , map GantryContainerViewRoute <| s "gantry" </> s "containers" </> string
         ]
 
 
 globalTabs : List ( String, String )
 globalTabs =
     [ ( "Home", "" )
-    , ( "Gantry", "gantry/container" )
+    , ( "Gantry", "gantry/containers" )
     ]
 
 
 gantryTabs : List ( String, String )
 gantryTabs =
-    [ ( "Container", "gantry/container" )
+    [ ( "Containers", "gantry/containers" )
     , ( "Image", "gantry/image" )
     ]
 
 
-containerTabs : List ( String, String )
-containerTabs =
-    [ ( "CONTAINERS", "gantry/container" )
-    , ( "CREATE NEW", "gantry/container/create" )
+containersTabs : List ( String, String )
+containersTabs =
+    [ ( "CONTAINERS", "gantry/containers" )
+    , ( "CREATE NEW", "gantry/containers/create" )
     ]
 
 
