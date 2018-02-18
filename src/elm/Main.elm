@@ -2,17 +2,15 @@ module Main exposing (..)
 
 import Views
 import Types.Auth
-import RouteUrl as Routing
-import State exposing (Model, Msg, init, update)
+import Navigation
+import State exposing (Model, Msg, init, update, subscriptions)
 
 
-main : Routing.RouteUrlProgram (Maybe Types.Auth.Credentials) Model Msg
+main : Program (Maybe Types.Auth.Credentials) Model Msg
 main =
-    Routing.programWithFlags
-        { delta2url = Views.delta2url
-        , location2messages = Views.location2messages
-        , init = init
-        , view = Views.view
-        , subscriptions = (\model -> Sub.none)
+    Navigation.programWithFlags State.OnLocationChange
+        { init = init
+        , view = Views.globalView
+        , subscriptions = subscriptions
         , update = update
         }
