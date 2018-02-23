@@ -5,11 +5,6 @@ import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
 import Pages.Container as ContainerPage
-
-
---import Pages.Containers as ContainersPage
---import Pages.Images as ImagesPage
-
 import State exposing (..)
 import ViewComponents exposing (..)
 
@@ -31,30 +26,42 @@ view model =
         Router.LandingRoute ->
             homeView model
 
-        Router.GantryContainersViewRoute ->
+        Router.CloneRoute ->
             div []
                 [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                , instancesView model
+                ]
+
+        Router.ConvertRoute ->
+            div []
+                [ navMdl 0 2 model <| tabLabels Router.globalTabs
+                , convertView model
+                ]
+
+        Router.GantryContainersViewRoute ->
+            div []
+                [ navMdl 0 3 model <| tabLabels Router.globalTabs
                 , navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containersListView model
                 ]
 
         Router.GantryContainersCreateRoute ->
             div []
-                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                [ navMdl 0 3 model <| tabLabels Router.globalTabs
                 , navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containersCreateView model
                 ]
 
         Router.GantryContainerViewRoute containerID ->
             div []
-                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                [ navMdl 0 3 model <| tabLabels Router.globalTabs
                 , navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containerView model containerID
                 ]
 
         Router.GantryImageRoute ->
             div []
-                [ navMdl 0 1 model <| tabLabels Router.globalTabs
+                [ navMdl 0 3 model <| tabLabels Router.globalTabs
                 , navMdl 1 1 model <| tabLabels Router.gantryTabs
                 , imagesView model
                 ]
@@ -95,19 +102,36 @@ e404 _ =
 
 homeView : Model -> Html Msg
 homeView model =
-    centerDiv
-        [ -- inline CSS (literal)
-          (case model.loginPage.authenticationState of
+    div []
+        [ (case model.loginPage.authenticationState of
             Auth.LoggedIn creds ->
                 div []
                     [ navMdl 0 0 model <| tabLabels Router.globalTabs
-                    , text ("Hi " ++ creds.userName)
-                    , logoutView model
+                    , yellowDivMdl
+                        [ textMdl ("Hi " ++ creds.userName)
+                        , logoutView model
+                        ]
                     ]
 
             Auth.LoggedOut ->
                 text "Error"
           )
+        ]
+
+
+instancesView : Model -> Html Msg
+instancesView model =
+    yellowDivMdl
+        [ instancesTableMdl model
+        ]
+
+
+convertView : Model -> Html Msg
+convertView model =
+    yellowDivMdl
+        [ convertTableMdl model
+        , hr [] []
+        , processesTableMdl model
         ]
 
 

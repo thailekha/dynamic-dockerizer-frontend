@@ -6,6 +6,8 @@ import UrlParser exposing (..)
 
 type Route
     = LandingRoute
+    | CloneRoute
+    | ConvertRoute
     | GantryContainersViewRoute
     | GantryContainersCreateRoute
     | GantryContainerViewRoute String
@@ -17,6 +19,8 @@ matchers : Parser (Route -> a) a
 matchers =
     oneOf
         [ map LandingRoute top
+        , map CloneRoute <| s "clone"
+        , map ConvertRoute <| s "convert"
         , map GantryContainersViewRoute <| s "gantry" </> s "containers"
         , map GantryContainersCreateRoute <| s "gantry" </> s "containers" </> s "create"
         , map GantryImageRoute <| s "gantry" </> s "image"
@@ -27,6 +31,8 @@ matchers =
 globalTabs : List ( String, String )
 globalTabs =
     [ ( "Home", "" )
+    , ( "Clone", "clone" )
+    , ( "Convert", "convert" )
     , ( "Gantry", "gantry/containers" )
     ]
 

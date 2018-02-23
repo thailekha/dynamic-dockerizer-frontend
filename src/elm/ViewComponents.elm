@@ -21,6 +21,8 @@ import Types.CommonResponses exposing (StringResponse)
 import Types.ContainerCreater as ContainerCreater
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
+import Pages.Instances as InstancesPage
+import Pages.Convert as ConvertPage
 import State exposing (Model, Msg)
 import Set exposing (Set)
 import Dict exposing (Dict)
@@ -326,6 +328,136 @@ imagesTableMdl model =
                     )
             )
         ]
+
+
+instancesTableMdl : Model -> Html Msg
+instancesTableMdl model =
+    let
+        fetchedInstances =
+            InstancesPage.tryGetInstances model.instancesPage
+    in
+        if List.length fetchedInstances == 0 then
+            textMdl "No instances found"
+        else
+            Table.table []
+                [ Table.thead []
+                    [ Table.tr []
+                        [ Table.th [] [ text "Tags" ]
+                        , Table.th [] [ text "Id" ]
+                        , Table.th [] [ text "Public DNS" ]
+                        ]
+                    ]
+                , Table.tbody []
+                    (InstancesPage.tryGetInstances model.instancesPage
+                        |> List.indexedMap
+                            (\idx instance ->
+                                Table.tr
+                                    []
+                                    [ Table.td [] [ text <| toString instance.tags ]
+                                    , Table.td [] [ text <| toString instance.instanceId ]
+                                    , Table.td [] [ text <| toString instance.dns ]
+                                    ]
+                            )
+                    )
+                ]
+
+
+convertTableMdl : Model -> Html Msg
+convertTableMdl model =
+    case model.convertPage.cloneWebdata of
+        RemoteData.NotAsked ->
+            textMdl "Clone has not been fetched"
+
+        RemoteData.Loading ->
+            textMdl "Loading ..."
+
+        RemoteData.Failure error ->
+            textMdl (toString error)
+
+        RemoteData.Success fetchedClone ->
+            case fetchedClone.clone of
+                Nothing ->
+                    textMdl "No clone found"
+
+                Just clone ->
+                    div []
+                        [ textMdl "Found clone"
+                        , Table.table []
+                            [ Table.thead []
+                                [ Table.tr []
+                                    [ Table.th [] [ text "Tags" ]
+                                    , Table.th [] [ text "Id" ]
+                                    , Table.th [] [ text "Public DNS" ]
+                                    ]
+                                ]
+                            , Table.tbody []
+                                [ Table.tr
+                                    []
+                                    [ Table.td [] [ text <| toString clone.tags ]
+                                    , Table.td [] [ text <| toString clone.instanceId ]
+                                    , Table.td [] [ text <| toString clone.dns ]
+                                    ]
+                                ]
+                            ]
+                        ]
+
+
+processesTableMdl : Model -> Html Msg
+processesTableMdl model =
+    case model.convertPage.processesWebdata of
+        RemoteData.NotAsked ->
+            textMdl "Processes not fetched"
+
+        RemoteData.Loading ->
+            textMdl "Loading ..."
+
+        RemoteData.Failure error ->
+            textMdl (toString error)
+
+        RemoteData.Success processes ->
+            div []
+                [ textMdl "Found processes"
+                , buttonMdl model 0 State.Req_ConvertProcesses "Convert"
+                , Table.table []
+                    [ Table.thead []
+                        [ Table.tr []
+                            [ Table.th []
+                                [ Toggles.checkbox State.Mdl
+                                    [ -1 ]
+                                    model.mdl
+                                    [ Options.onToggle State.Input_ConvertPage_ToggleAll
+                                    , Toggles.value (State.allProcessesSelected model)
+                                    ]
+                                    []
+                                ]
+                            , Table.th [] [ text "Pid" ]
+                            , Table.th [] [ text "Port" ]
+                            , Table.th [] [ text "Program" ]
+                            ]
+                        ]
+                    , Table.tbody []
+                        (processes.processes
+                            |> List.indexedMap
+                                (\idx p ->
+                                    Table.tr
+                                        [ when (Set.member p.pid model.input_ConvertPage_SelectedProcesses) Table.selected ]
+                                        [ Table.td []
+                                            [ Toggles.checkbox State.Mdl
+                                                [ idx ]
+                                                model.mdl
+                                                [ Options.onToggle (State.Input_ConvertPage_Toggle p)
+                                                , Toggles.value <| Set.member p.pid model.input_ConvertPage_SelectedProcesses
+                                                ]
+                                                []
+                                            ]
+                                        , Table.td [] [ text <| toString p.pid ]
+                                        , Table.td [] [ text <| toString p.port_ ]
+                                        , Table.td [] [ text <| toString p.program ]
+                                        ]
+                                )
+                        )
+                    ]
+                ]
 
 
 containersManagementWebDataString : Model -> List String
