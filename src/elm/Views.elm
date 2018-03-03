@@ -27,42 +27,36 @@ view model =
             homeView model
 
         Router.CloneRoute ->
-            div []
-                [ navMdl 0 1 model <| tabLabels Router.globalTabs
-                , instancesView model
+            view_ model
+                [ instancesView model
                 ]
 
         Router.ConvertRoute ->
-            div []
-                [ navMdl 0 2 model <| tabLabels Router.globalTabs
-                , convertView model
+            view_ model
+                [ convertView model
                 ]
 
         Router.GantryContainersViewRoute ->
-            div []
-                [ navMdl 0 3 model <| tabLabels Router.globalTabs
-                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+            view_ model
+                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containersListView model
                 ]
 
         Router.GantryContainersCreateRoute ->
-            div []
-                [ navMdl 0 3 model <| tabLabels Router.globalTabs
-                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+            view_ model
+                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containersCreateView model
                 ]
 
         Router.GantryContainerViewRoute containerID ->
-            div []
-                [ navMdl 0 3 model <| tabLabels Router.globalTabs
-                , navMdl 1 0 model <| tabLabels Router.gantryTabs
+            view_ model
+                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
                 , containerView model containerID
                 ]
 
         Router.GantryImageRoute ->
-            div []
-                [ navMdl 0 3 model <| tabLabels Router.globalTabs
-                , navMdl 1 1 model <| tabLabels Router.gantryTabs
+            view_ model
+                [ navMdl 1 1 model <| tabLabels Router.gantryTabs
                 , imagesView model
                 ]
 
@@ -105,11 +99,9 @@ homeView model =
     div []
         [ (case model.loginPage.authenticationState of
             Auth.LoggedIn creds ->
-                div []
-                    [ navMdl 0 0 model <| tabLabels Router.globalTabs
-                    , yellowDivMdl
+                view_ model
+                    [ yellowDivMdl
                         [ textMdl ("Hi " ++ creds.userName)
-                        , logoutView model
                         ]
                     ]
 
@@ -133,11 +125,6 @@ convertView model =
         , hr [] []
         , processesTableMdl model
         ]
-
-
-logoutView : Model -> Html Msg
-logoutView model =
-    rightButtonMdl model 1 Req_LoginPage_Logout "Logout"
 
 
 containersListView : Model -> Html Msg

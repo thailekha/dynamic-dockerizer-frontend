@@ -16,6 +16,7 @@ import Types.CommonResponses as CommonResponses
 import Types.Images as Images
 import Types.Instances as Instances
 import Types.Processes as Processes
+import Types.ProgressKeys as ProgressKeys
 import Material
 import Navigation exposing (Location)
 import Pages.Router as Router
@@ -24,6 +25,7 @@ import Debug
 import Json.Encode as Encode
 import Json.Decode exposing (Value, decodeValue, string, field)
 import Dict
+import Time exposing (Time, second)
 
 
 type alias Model =
@@ -53,6 +55,7 @@ type alias Model =
     , res_Gantry_ContainersPage_Create : WebData CommonResponses.PortResponse
     , ec2_url_input : String
     , ec2_url : String
+    , progressKeys : ProgressKeys.ProgressKeys
     , route : Router.Route
     , mdl : Material.Model
     }
@@ -98,6 +101,7 @@ initModel config initialRoute =
 
             Nothing ->
                 ""
+    , progressKeys = ProgressKeys.init
     , route = initialRoute
     , mdl = Material.model
     }
@@ -162,15 +166,17 @@ type Msg
     | Ec2_URL_From_LocalStorage String
     | Ec2_URL_NotSet -- make a snackbar for this
     | Res_InstancesPage_GetInstances (WebData Instances.Instances)
-    | Res_GetClone (WebData Instances.Clone)
-    | Res_GetClone_Then_Req_GetProcess (WebData Instances.Clone)
+    | Req_GetClone (WebData ProgressKeys.ProgressKey)
+    | Res_GetClone_Then_Req_GetProcess String (WebData Instances.Clone)
     | Res_GetProcesses (WebData Processes.Processes)
     | Input_ConvertPage_ToggleAll
     | Input_ConvertPage_Toggle Processes.Process
     | Req_ConvertProcesses
     | Res_ConvertProcess String (WebData CommonResponses.StringResponse)
+    | Res_ProgressStatus String (WebData ProgressKeys.ProgressStatus)
     | OnLocationChange Location -- routing
     | Mdl (Material.Msg Msg) -- styling
+    | Tick Time
     | NoChange -- for dev
     | NoChangeText String -- for dev
 
@@ -590,20 +596,23 @@ update msg model =
         Res_InstancesPage_GetInstances response ->
             { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage response } ! []
 
-        Res_GetClone response ->
-            let
-                ( newModel, ec2Url ) =
-                    updateModelForGetCloneResponse model response
-            in
-                if ec2Url /= "" then
-                    ( newModel, saveEc2Url ec2Url )
-                else
-                    newModel ! []
+        Req_GetClone progressKeyResponse ->
+            case progressKeyResponse of
+                RemoteData.Success progressKey ->
+                    ( { model
+                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.getClone, 0 ) model.progressKeys
+                      }
+                    , reqGetClone model progressKey.key (Res_GetClone_Then_Req_GetProcess progressKey.key)
+                    )
 
-        Res_GetClone_Then_Req_GetProcess response ->
+                _ ->
+                    model ! []
+
+        Res_GetClone_Then_Req_GetProcess progressKey response ->
             let
                 ( newModel, ec2Url ) =
-                    updateModelForGetCloneResponse model response
+                    { model | progressKeys = Dict.remove progressKey model.progressKeys }
+                        |> updateModelForGetCloneResponse response
             in
                 if ec2Url /= "" then
                     ( newModel, Cmd.batch [ saveEc2Url ec2Url, reqGetProcesses model ] )
@@ -650,6 +659,17 @@ update msg model =
             }
                 ! []
 
+        Res_ProgressStatus progressKey response ->
+            case response of
+                RemoteData.Success progressStatus ->
+                    { model
+                        | progressKeys = Dict.update progressKey (\maybeStatus -> Maybe.map (\( x, _ ) -> ( x, progressStatus.status )) maybeStatus) model.progressKeys
+                    }
+                        ! []
+
+                _ ->
+                    model ! []
+
         OnLocationChange location ->
             let
                 newRoute =
@@ -663,6 +683,14 @@ update msg model =
 
         Mdl msg_ ->
             Material.update Mdl msg_ model
+
+        Tick _ ->
+            ( model
+            , model.progressKeys
+                |> Dict.keys
+                |> List.map (\progressKey -> reqProgressStatus model progressKey)
+                |> Cmd.batch
+            )
 
         NoChange ->
             ( model, Cmd.none )
@@ -714,6 +742,7 @@ subscriptions model =
         [ onContainersResponse Res_Gantry_ContainersPage_Containers
         , onCreateContainerResponse Res_Gantry_ContainersPage_Create
         , onContainerResponse Res_Gantry_ContainerPage_Get
+        , Time.every second Tick
         ]
 
 
@@ -761,8 +790,52 @@ reqInstances model =
 -- Clone
 
 
-reqGetClone : Model -> (WebData Instances.Clone -> Msg) -> Cmd Msg
-reqGetClone model cb =
+reqProgressKey : Model -> (WebData ProgressKeys.ProgressKey -> Msg) -> Cmd Msg
+reqProgressKey model cb =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+    in
+        if token /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/progress/generate"
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressKey
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map cb
+        else
+            Cmd.none
+
+
+reqProgressStatus : Model -> String -> Cmd Msg
+reqProgressStatus model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+    in
+        if token /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/progress/status/" ++ progressKey
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_ProgressStatus progressKey)
+        else
+            Cmd.none
+
+
+reqGetClone : Model -> String -> (WebData Instances.Clone -> Msg) -> Cmd Msg
+reqGetClone model progressKey cb =
     let
         ( token, accessKeyId ) =
             ( LoginPage.tryGetToken model.loginPage, LoginPage.tryGetAccessKeyId model.loginPage )
@@ -770,7 +843,10 @@ reqGetClone model cb =
         if token /= "" && accessKeyId /= "" then
             Http.request
                 { method = "GET"
-                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , headers =
+                    [ Http.header "Authorization" ("Bearer " ++ token)
+                    , Http.header "x-dd-progress" progressKey
+                    ]
                 , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/clone"
                 , body = Http.emptyBody
                 , expect = Http.expectJson Instances.decodeClone
@@ -793,7 +869,7 @@ reqGetProcesses model =
         token =
             LoginPage.tryGetToken model.loginPage
     in
-        if token /= "" && model.ec2_url /= "" then
+        if token /= "" then
             Http.request
                 { method = "GET"
                 , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
@@ -985,8 +1061,8 @@ getContainerQuery model containerID =
         ]
 
 
-updateModelForGetCloneResponse : Model -> WebData Instances.Clone -> ( Model, String )
-updateModelForGetCloneResponse model response =
+updateModelForGetCloneResponse : WebData Instances.Clone -> Model -> ( Model, String )
+updateModelForGetCloneResponse response model =
     let
         newModel =
             ConvertPage.updateCloneWebdata model.convertPage response
@@ -1026,7 +1102,7 @@ sendRequestsBasedOnRoute model newRoute =
                             model ! []
 
                         _ ->
-                            ( { model | convertPage = ConvertPage.updateCloneWebdata model.convertPage RemoteData.Loading }, reqGetClone model Res_GetClone_Then_Req_GetProcess )
+                            ( { model | convertPage = ConvertPage.updateCloneWebdata model.convertPage RemoteData.Loading }, reqProgressKey model Req_GetClone )
 
                 Router.GantryContainersViewRoute ->
                     ( model, reqContainers <| getContainersQuery model )

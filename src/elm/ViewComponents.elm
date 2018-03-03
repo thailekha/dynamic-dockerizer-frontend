@@ -1,7 +1,7 @@
 module ViewComponents exposing (..)
 
-import Html exposing (Html, a, text, div, p, br, option, select)
-import Html.Attributes exposing (class, style, href, value, attribute)
+import Html exposing (Html, a, text, div, p, br, option, select, img)
+import Html.Attributes exposing (class, style, href, value, attribute, src, height, width)
 import Html.Events exposing (on)
 import Material.Options as Options exposing (when, css)
 import Material.Button as Button
@@ -14,15 +14,19 @@ import Material.List as Lists
 import Material.Chip as Chip
 import Material.Color as Color
 import Material.Grid exposing (grid, cell, size, Device(..))
+import Material.Progress as Loading
+import Material.Layout as Layout
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.Images as Images
 import Types.CommonResponses exposing (StringResponse)
 import Types.ContainerCreater as ContainerCreater
+import Types.ProgressKeys as ProgressKeys
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
 import Pages.Instances as InstancesPage
 import Pages.Convert as ConvertPage
+import Pages.Router as Router
 import State exposing (Model, Msg)
 import Set exposing (Set)
 import Dict exposing (Dict)
@@ -39,6 +43,68 @@ centerDiv =
 breaker : List (Html msg) -> List (Html msg)
 breaker =
     List.concatMap (\htmlI -> [ htmlI, br [] [] ])
+
+
+
+-- ref: https://github.com/tkshill/tkshill.github.io/blob/master/src/Main.elm
+
+
+view_ : Model -> List (Html Msg) -> Html Msg
+view_ model main_ =
+    let
+        ( header, drawer ) =
+            ( [ Layout.row
+                    []
+                    [ Layout.title [] [ text "Dynamic Dockerizer" ]
+                    , Layout.spacer
+                    , Layout.navigation []
+                        [ Layout.link
+                            [ Layout.href ""
+                            , Color.background <| Color.black
+                            , Options.onClick State.Req_LoginPage_Logout
+                            ]
+                            [ text "Logout" ]
+                        ]
+                    ]
+              ]
+            , [ Layout.title
+                    [ Color.background <| Color.color Color.Teal Color.S500
+
+                    --, Options.css "border-bottom-style" "solid"
+                    --, Options.css "border-color" "#ffffff"
+                    --, Options.css "border-width" "5px"
+                    ]
+                    [ img [ src "static/img/logo1.png", height 50, width 150 ] [] ]
+              , Layout.navigation
+                    --[ Color.background Color.black
+                    --]
+                    []
+                <|
+                    List.map
+                        (\( label, url ) ->
+                            Layout.link
+                                [ Layout.href ("#/" ++ url)
+
+                                --, Options.onClick (Layout.toggleDrawer Mdl)
+                                ]
+                                [ text label ]
+                        )
+                    <|
+                        Router.globalTabs
+              ]
+            )
+    in
+        Layout.render State.Mdl
+            model.mdl
+            [ Layout.fixedHeader
+            , Layout.fixedDrawer
+            , Layout.rippleTabs
+            ]
+            { header = header
+            , drawer = drawer
+            , tabs = ( [], [] )
+            , main = main_
+            }
 
 
 buttonMdl : Model -> Int -> Msg -> String -> Html Msg
@@ -369,7 +435,10 @@ convertTableMdl model =
             textMdl "Clone has not been fetched"
 
         RemoteData.Loading ->
-            textMdl "Loading ..."
+            Dict.values model.progressKeys
+                |> List.filter (\( x, _ ) -> x == ProgressKeys.getClone)
+                |> List.map (\( _, progress ) -> Loading.buffered progress progress)
+                |> div []
 
         RemoteData.Failure error ->
             textMdl (toString error)
