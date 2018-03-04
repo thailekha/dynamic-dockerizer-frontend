@@ -2,6 +2,8 @@ module Pages.Login exposing (..)
 
 import Types.Auth as Auth
 import RemoteData exposing (WebData)
+import Json.Decode exposing (Value, decodeValue)
+import Debug
 
 
 type alias Model =
@@ -10,12 +12,18 @@ type alias Model =
     }
 
 
-init : Maybe Auth.Credentials -> Model
-init initialData =
+init : Maybe Value -> Model
+init config =
     { authenticationState =
-        case initialData of
-            Just credentials ->
-                Auth.LoggedIn credentials
+        case config of
+            Just initialData ->
+                case (decodeValue Auth.decodeCredentials initialData) of
+                    Ok decodedCredentials ->
+                        Auth.LoggedIn decodedCredentials
+
+                    Err _ ->
+                        Debug.log "Cannot decode auth data from config" ""
+                            |> always Auth.LoggedOut
 
             Nothing ->
                 Auth.LoggedOut
@@ -36,3 +44,23 @@ updateCredentialsWebdata model response =
                     model.authenticationState
             )
     }
+
+
+tryGetToken : Model -> String
+tryGetToken model =
+    case model.authenticationState of
+        Auth.LoggedIn creds ->
+            creds.token
+
+        Auth.LoggedOut ->
+            ""
+
+
+tryGetAccessKeyId : Model -> String
+tryGetAccessKeyId model =
+    case model.authenticationState of
+        Auth.LoggedIn creds ->
+            creds.accessKeyId
+
+        Auth.LoggedOut ->
+            ""

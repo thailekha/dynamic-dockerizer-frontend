@@ -1,7 +1,6 @@
 module Types.CommonResponses exposing (..)
 
-import Json.Decode exposing (int, string, bool, field, map3, Decoder)
-import Json.Decode.Pipeline exposing (decode, required)
+import Json.Decode exposing (..)
 
 
 type alias StringResponse =
@@ -11,8 +10,8 @@ type alias StringResponse =
 
 decodeStringResponse : Decoder StringResponse
 decodeStringResponse =
-    decode StringResponse
-        |> required "message" string
+    map StringResponse
+        (field "message" string)
 
 
 type alias PortResponse =

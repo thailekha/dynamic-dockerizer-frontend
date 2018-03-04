@@ -1,7 +1,7 @@
 module ViewComponents exposing (..)
 
-import Html exposing (Html, a, text, div, p, br, option, select)
-import Html.Attributes exposing (class, style, href, value, attribute)
+import Html exposing (Html, a, text, div, p, br, option, select, img)
+import Html.Attributes exposing (class, style, href, value, attribute, src, height, width)
 import Html.Events exposing (on)
 import Material.Options as Options exposing (when, css)
 import Material.Button as Button
@@ -14,13 +14,19 @@ import Material.List as Lists
 import Material.Chip as Chip
 import Material.Color as Color
 import Material.Grid exposing (grid, cell, size, Device(..))
+import Material.Progress as Loading
+import Material.Layout as Layout
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.Images as Images
 import Types.CommonResponses exposing (StringResponse)
 import Types.ContainerCreater as ContainerCreater
+import Types.ProgressKeys as ProgressKeys
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
+import Pages.Instances as InstancesPage
+import Pages.Convert as ConvertPage
+import Pages.Router as Router
 import State exposing (Model, Msg)
 import Set exposing (Set)
 import Dict exposing (Dict)
@@ -37,6 +43,68 @@ centerDiv =
 breaker : List (Html msg) -> List (Html msg)
 breaker =
     List.concatMap (\htmlI -> [ htmlI, br [] [] ])
+
+
+
+-- ref: https://github.com/tkshill/tkshill.github.io/blob/master/src/Main.elm
+
+
+view_ : Model -> List (Html Msg) -> Html Msg
+view_ model main_ =
+    let
+        ( header, drawer ) =
+            ( [ Layout.row
+                    []
+                    [ Layout.title [] [ text "Dynamic Dockerizer" ]
+                    , Layout.spacer
+                    , Layout.navigation []
+                        [ Layout.link
+                            [ Layout.href ""
+                            , Color.background <| Color.black
+                            , Options.onClick State.Req_LoginPage_Logout
+                            ]
+                            [ text "Logout" ]
+                        ]
+                    ]
+              ]
+            , [ Layout.title
+                    [ Color.background <| Color.color Color.Teal Color.S500
+
+                    --, Options.css "border-bottom-style" "solid"
+                    --, Options.css "border-color" "#ffffff"
+                    --, Options.css "border-width" "5px"
+                    ]
+                    [ img [ src "static/img/logo1.png", height 50, width 150 ] [] ]
+              , Layout.navigation
+                    --[ Color.background Color.black
+                    --]
+                    []
+                <|
+                    List.map
+                        (\( label, url ) ->
+                            Layout.link
+                                [ Layout.href ("#/" ++ url)
+
+                                --, Options.onClick (Layout.toggleDrawer Mdl)
+                                ]
+                                [ text label ]
+                        )
+                    <|
+                        Router.globalTabs
+              ]
+            )
+    in
+        Layout.render State.Mdl
+            model.mdl
+            [ Layout.fixedHeader
+            , Layout.fixedDrawer
+            , Layout.rippleTabs
+            ]
+            { header = header
+            , drawer = drawer
+            , tabs = ( [], [] )
+            , main = main_
+            }
 
 
 buttonMdl : Model -> Int -> Msg -> String -> Html Msg
@@ -326,6 +394,139 @@ imagesTableMdl model =
                     )
             )
         ]
+
+
+instancesTableMdl : Model -> Html Msg
+instancesTableMdl model =
+    let
+        fetchedInstances =
+            InstancesPage.tryGetInstances model.instancesPage
+    in
+        if List.length fetchedInstances == 0 then
+            textMdl "No instances found"
+        else
+            Table.table []
+                [ Table.thead []
+                    [ Table.tr []
+                        [ Table.th [] [ text "Tags" ]
+                        , Table.th [] [ text "Id" ]
+                        , Table.th [] [ text "Public DNS" ]
+                        ]
+                    ]
+                , Table.tbody []
+                    (InstancesPage.tryGetInstances model.instancesPage
+                        |> List.indexedMap
+                            (\idx instance ->
+                                Table.tr
+                                    []
+                                    [ Table.td [] [ text <| toString instance.tags ]
+                                    , Table.td [] [ text <| toString instance.instanceId ]
+                                    , Table.td [] [ text <| toString instance.dns ]
+                                    ]
+                            )
+                    )
+                ]
+
+
+convertTableMdl : Model -> Html Msg
+convertTableMdl model =
+    case model.convertPage.cloneWebdata of
+        RemoteData.NotAsked ->
+            textMdl "Clone has not been fetched"
+
+        RemoteData.Loading ->
+            Dict.values model.progressKeys
+                |> List.filter (\( x, _ ) -> x == ProgressKeys.getClone)
+                |> List.map (\( _, progress ) -> Loading.buffered progress progress)
+                |> div []
+
+        RemoteData.Failure error ->
+            textMdl (toString error)
+
+        RemoteData.Success fetchedClone ->
+            case fetchedClone.clone of
+                Nothing ->
+                    textMdl "No clone found"
+
+                Just clone ->
+                    div []
+                        [ textMdl "Found clone"
+                        , Table.table []
+                            [ Table.thead []
+                                [ Table.tr []
+                                    [ Table.th [] [ text "Tags" ]
+                                    , Table.th [] [ text "Id" ]
+                                    , Table.th [] [ text "Public DNS" ]
+                                    ]
+                                ]
+                            , Table.tbody []
+                                [ Table.tr
+                                    []
+                                    [ Table.td [] [ text <| toString clone.tags ]
+                                    , Table.td [] [ text <| toString clone.instanceId ]
+                                    , Table.td [] [ text <| toString clone.dns ]
+                                    ]
+                                ]
+                            ]
+                        ]
+
+
+processesTableMdl : Model -> Html Msg
+processesTableMdl model =
+    case model.convertPage.processesWebdata of
+        RemoteData.NotAsked ->
+            textMdl "Processes not fetched"
+
+        RemoteData.Loading ->
+            textMdl "Loading ..."
+
+        RemoteData.Failure error ->
+            textMdl (toString error)
+
+        RemoteData.Success processes ->
+            div []
+                [ textMdl "Found processes"
+                , buttonMdl model 0 State.Req_ConvertProcesses "Convert"
+                , Table.table []
+                    [ Table.thead []
+                        [ Table.tr []
+                            [ Table.th []
+                                [ Toggles.checkbox State.Mdl
+                                    [ -1 ]
+                                    model.mdl
+                                    [ Options.onToggle State.Input_ConvertPage_ToggleAll
+                                    , Toggles.value (State.allProcessesSelected model)
+                                    ]
+                                    []
+                                ]
+                            , Table.th [] [ text "Pid" ]
+                            , Table.th [] [ text "Port" ]
+                            , Table.th [] [ text "Program" ]
+                            ]
+                        ]
+                    , Table.tbody []
+                        (processes.processes
+                            |> List.indexedMap
+                                (\idx p ->
+                                    Table.tr
+                                        [ when (Set.member p.pid model.input_ConvertPage_SelectedProcesses) Table.selected ]
+                                        [ Table.td []
+                                            [ Toggles.checkbox State.Mdl
+                                                [ idx ]
+                                                model.mdl
+                                                [ Options.onToggle (State.Input_ConvertPage_Toggle p)
+                                                , Toggles.value <| Set.member p.pid model.input_ConvertPage_SelectedProcesses
+                                                ]
+                                                []
+                                            ]
+                                        , Table.td [] [ text <| toString p.pid ]
+                                        , Table.td [] [ text <| toString p.port_ ]
+                                        , Table.td [] [ text <| toString p.program ]
+                                        ]
+                                )
+                        )
+                    ]
+                ]
 
 
 containersManagementWebDataString : Model -> List String

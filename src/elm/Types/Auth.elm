@@ -1,8 +1,6 @@
 module Types.Auth exposing (..)
 
-import Json.Decode exposing (Decoder)
-import Json.Decode exposing (int, string, float, nullable, Decoder)
-import Json.Decode.Pipeline exposing (decode, hardcoded)
+import Json.Decode exposing (..)
 import Json.Encode
 
 
@@ -10,6 +8,7 @@ type alias Credentials =
     { userName : String
     , accessKeyId : String
     , secretAccessKey : String
+    , token : String
     }
 
 
@@ -18,25 +17,31 @@ type AuthenticationState
     | LoggedIn Credentials
 
 
-constructCredentials : String -> String -> String -> Credentials
-constructCredentials userName accessKeyId secretAccessKey =
+constructCredentials : String -> String -> String -> String -> Credentials
+constructCredentials userName accessKeyId secretAccessKey token =
     { userName = userName
     , accessKeyId = accessKeyId
     , secretAccessKey = secretAccessKey
+    , token = token
     }
 
 
 emptyCredentials : Credentials
 emptyCredentials =
-    constructCredentials "" "" ""
+    constructCredentials "" "" "" ""
 
 
-decodeCredentials : Credentials -> Decoder Credentials
-decodeCredentials credentialsInput =
-    decode Credentials
-        |> hardcoded credentialsInput.userName
-        |> hardcoded credentialsInput.accessKeyId
-        |> hardcoded credentialsInput.secretAccessKey
+decodeCredentials : Decoder Credentials
+decodeCredentials =
+    map4 Credentials
+        (field "userName" string)
+        (field "accessKeyId" string)
+        (field "secretAccessKey" string)
+        (field "token" string)
+
+
+
+-- For login i.e. ignore token
 
 
 encodeCredentials : Credentials -> Json.Encode.Value
