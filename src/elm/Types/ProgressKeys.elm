@@ -18,6 +18,16 @@ getClone =
     "get_clone"
 
 
+doClone : String
+doClone =
+    "do_clone"
+
+
+getInstances : String
+getInstances =
+    "get_instances"
+
+
 type alias ProgressKey =
     { key : String
     }

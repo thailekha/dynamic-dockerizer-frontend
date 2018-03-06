@@ -9,6 +9,7 @@ import Pages.Container as ContainerPage
 import Pages.Images as ImagesPage
 import Pages.Instances as InstancesPage
 import Pages.Convert as ConvertPage
+import Pages.Home as HomePage
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.ContainerCreater as ContainerCreater
@@ -26,16 +27,23 @@ import Json.Encode as Encode
 import Json.Decode exposing (Value, decodeValue, string, field)
 import Dict
 import Time exposing (Time, second)
+import FileReader exposing (NativeFile)
+import Task
 
 
 type alias Model =
     { loginPage : LoginPage.Model
+    , homePage : HomePage.Model
     , instancesPage : InstancesPage.Model
     , convertPage : ConvertPage.Model
     , containersPage : ContainersPage.Model
     , containerCreatePage : ContainerCreatePage.Model
     , containerPage : ContainerPage.Model
     , imagesPage : ImagesPage.Model
+    , selectedRegion : String
+    , input_InstancesPage_Keyfile : Maybe NativeFile
+    , input_InstancesPage_KeypairName : String
+    , input_InstancesPage_SelectedInstance : String
     , input_ConvertPage_SelectedProcesses : Set String
     , input_LoginPage_UserName : String
     , input_LoginPage_AccessKeyId : String
@@ -64,12 +72,29 @@ type alias Model =
 initModel : Maybe Value -> Router.Route -> Model
 initModel config initialRoute =
     { loginPage = LoginPage.init config
+    , homePage = HomePage.init
     , instancesPage = InstancesPage.init
     , convertPage = ConvertPage.init
     , containersPage = ContainersPage.init
     , containerCreatePage = ContainerCreatePage.init
     , containerPage = ContainerPage.init
     , imagesPage = ImagesPage.init
+    , selectedRegion =
+        case config of
+            Just initialData ->
+                case (decodeValue (field "ec2Region" string) initialData) of
+                    Ok ec2Region ->
+                        ec2Region
+
+                    Err _ ->
+                        Debug.log "Cannot decode ec2Region from config" config
+                            |> always "eu-west-1"
+
+            Nothing ->
+                "eu-west-1"
+    , input_InstancesPage_Keyfile = Nothing
+    , input_InstancesPage_KeypairName = ""
+    , input_InstancesPage_SelectedInstance = ""
     , input_ConvertPage_SelectedProcesses = Set.empty
     , input_LoginPage_UserName = ""
     , input_LoginPage_AccessKeyId = ""
@@ -127,6 +152,19 @@ type Msg
     | Req_LoginPage_Submit
     | Res_LoginPage_Login (WebData Auth.Credentials)
     | Req_LoginPage_Logout
+    | Res_HomePage_CreateWorkspace (WebData CommonResponses.StringResponse)
+    | Res_HomePage_GetRegions (WebData CommonResponses.RegionsResponse)
+    | Input_HomePage_Region String
+    | Res_HomePage_UpdateAWSConfig (WebData CommonResponses.StringResponse)
+    | Input_InstancesPage_Keyfile (List NativeFile)
+    | Input_InstancesPage_KeypairName String
+    | Input_InstancesPage_Toggle Instances.Instance
+    | Req_InstancesPage_GetInstances (WebData ProgressKeys.ProgressKey)
+    | Res_InstancesPage_GetInstances String (WebData Instances.Instances)
+    | Req_InstancesPage_CloneInstance
+    | Req_InstancesPage_PrepareForClone (WebData ProgressKeys.ProgressKey)
+    | Req_InstancesPage_Clone String (WebData CommonResponses.StringResponse)
+    | Res_InstancesPage_Clone String (WebData CommonResponses.StringResponse)
     | Input_Gantry_ContainersPage_ToggleAll
     | Input_Gantry_ContainersPage_Toggle Containers.Container
     | Res_Gantry_ContainersPage_Containers Value
@@ -165,7 +203,6 @@ type Msg
     | Ec2_URL_Set
     | Ec2_URL_From_LocalStorage String
     | Ec2_URL_NotSet -- make a snackbar for this
-    | Res_InstancesPage_GetInstances (WebData Instances.Instances)
     | Req_GetClone (WebData ProgressKeys.ProgressKey)
     | Res_GetClone_Then_Req_GetProcess String (WebData Instances.Clone)
     | Res_GetProcesses (WebData Processes.Processes)
@@ -174,6 +211,7 @@ type Msg
     | Req_ConvertProcesses
     | Res_ConvertProcess String (WebData CommonResponses.StringResponse)
     | Res_ProgressStatus String (WebData ProgressKeys.ProgressStatus)
+    | NotSendingRequest_DeleteProgressKey String
     | OnLocationChange Location -- routing
     | Mdl (Material.Msg Msg) -- styling
     | Tick Time
@@ -249,17 +287,18 @@ update msg model =
             ( model, reqLogin model )
 
         Res_LoginPage_Login response ->
-            ( { model
-                | loginPage = LoginPage.updateCredentialsWebdata model.loginPage response
-              }
-            , (case response of
-                RemoteData.Success creds ->
-                    saveCreds creds
+            let
+                newModel =
+                    { model
+                        | loginPage = LoginPage.updateCredentialsWebdata model.loginPage response
+                    }
+            in
+                case response of
+                    RemoteData.Success creds ->
+                        ( newModel, Cmd.batch [ saveCreds creds, reqCreateWorkspace newModel, reqRegions newModel ] )
 
-                _ ->
-                    Cmd.none
-              )
-            )
+                    _ ->
+                        newModel ! []
 
         Req_LoginPage_Logout ->
             ( { model
@@ -270,6 +309,104 @@ update msg model =
               }
             , logout ()
             )
+
+        Res_HomePage_CreateWorkspace _ ->
+            model ! []
+
+        Res_HomePage_GetRegions response ->
+            { model | homePage = HomePage.updateRegionswebdata model.homePage response } ! []
+
+        Input_HomePage_Region region ->
+            let
+                newModel =
+                    { model | selectedRegion = region }
+            in
+                newModel ! [ saveEc2Region region, reqUpdateAWSConfig newModel ]
+
+        Res_HomePage_UpdateAWSConfig response ->
+            { model | homePage = HomePage.updateAwsconfigwebdata model.homePage response } ! []
+
+        Input_InstancesPage_Keyfile file ->
+            case file of
+                -- Only handling case of a single file
+                [ f ] ->
+                    { model | input_InstancesPage_Keyfile = Just f } ! []
+
+                _ ->
+                    model ! []
+
+        Input_InstancesPage_KeypairName name ->
+            { model | input_InstancesPage_KeypairName = name } ! []
+
+        Input_InstancesPage_Toggle instance ->
+            { model
+                | input_InstancesPage_SelectedInstance =
+                    if model.input_InstancesPage_SelectedInstance == instance.instanceId then
+                        ""
+                    else
+                        instance.instanceId
+            }
+                ! []
+
+        Req_InstancesPage_GetInstances progressKeyRes ->
+            case progressKeyRes of
+                RemoteData.Success progressKey ->
+                    ( { model
+                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.getInstances, 0 ) model.progressKeys
+                      }
+                    , reqInstances model progressKey.key
+                    )
+
+                _ ->
+                    model ! []
+
+        Req_InstancesPage_CloneInstance ->
+            ( model, reqProgressKey model Req_InstancesPage_PrepareForClone )
+
+        Req_InstancesPage_PrepareForClone progressKeyRes ->
+            case progressKeyRes of
+                RemoteData.Success progressKey ->
+                    ( { model
+                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.doClone, 0 ) model.progressKeys
+                      }
+                    , reqPrepareForClone model (Req_InstancesPage_Clone progressKey.key) (deleteProgressKeyInCaseOfError progressKey.key)
+                    )
+
+                _ ->
+                    model ! []
+
+        Req_InstancesPage_Clone progressKey prepareResponse ->
+            case prepareResponse of
+                RemoteData.Success _ ->
+                    ( { model
+                        | instancesPage = InstancesPage.updateCloneWebdata model.instancesPage RemoteData.Loading
+                      }
+                    , reqClone model progressKey
+                    )
+
+                _ ->
+                    model ! []
+
+        Res_InstancesPage_Clone progressKey response ->
+            let
+                newModel =
+                    { model
+                        | instancesPage = InstancesPage.updateCloneWebdata model.instancesPage response
+                        , progressKeys = Dict.remove progressKey model.progressKeys
+                    }
+            in
+                case response of
+                    RemoteData.Success _ ->
+                        ( { newModel
+                            | input_InstancesPage_Keyfile = Nothing
+                            , input_InstancesPage_KeypairName = ""
+                            , input_InstancesPage_SelectedInstance = ""
+                          }
+                        , reqProgressKey model Req_InstancesPage_GetInstances
+                        )
+
+                    _ ->
+                        newModel ! []
 
         Res_Gantry_ContainersPage_Containers response ->
             let
@@ -593,8 +730,12 @@ update msg model =
         Ec2_URL_NotSet ->
             model ! []
 
-        Res_InstancesPage_GetInstances response ->
-            { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage response } ! []
+        Res_InstancesPage_GetInstances progressKey response ->
+            { model
+                | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage response
+                , progressKeys = Dict.remove progressKey model.progressKeys
+            }
+                ! []
 
         Req_GetClone progressKeyResponse ->
             case progressKeyResponse of
@@ -670,6 +811,10 @@ update msg model =
                 _ ->
                     model ! []
 
+        NotSendingRequest_DeleteProgressKey progressKey ->
+            Debug.log "Request canceled, deleting progressKey" progressKey
+                |> always ({ model | progressKeys = Dict.remove progressKey model.progressKeys } ! [])
+
         OnLocationChange location ->
             let
                 newRoute =
@@ -706,6 +851,9 @@ port saveCreds : Auth.Credentials -> Cmd msg
 
 
 port saveEc2Url : String -> Cmd msg
+
+
+port saveEc2Region : String -> Cmd msg
 
 
 port reqContainers : Value -> Cmd msg
@@ -760,20 +908,122 @@ reqLogin model =
             |> Cmd.map Res_LoginPage_Login
 
 
-
--- Instances
-
-
-reqInstances : Model -> Cmd Msg
-reqInstances model =
+reqUpdateAWSConfig : Model -> Cmd Msg
+reqUpdateAWSConfig model =
     let
-        ( token, accessKeyId ) =
-            ( LoginPage.tryGetToken model.loginPage, LoginPage.tryGetAccessKeyId model.loginPage )
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
+
+        secretAccessKey =
+            LoginPage.trySecretAccessKey model.loginPage
+    in
+        if allNonemptyStrings [ token, accessKeyId, secretAccessKey, model.selectedRegion ] then
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/awsconfig"
+                , body =
+                    Http.jsonBody <|
+                        Encode.object
+                            [ ( "secretAccessKey", Encode.string secretAccessKey )
+                            , ( "region", Encode.string model.selectedRegion )
+                            ]
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_HomePage_UpdateAWSConfig
+        else
+            Cmd.none
+
+
+
+-- regions
+
+
+reqRegions : Model -> Cmd Msg
+reqRegions model =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
     in
         if token /= "" && accessKeyId /= "" then
             Http.request
                 { method = "GET"
                 , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/regions"
+                , body = Http.emptyBody
+                , expect = Http.expectJson CommonResponses.decodeRegionsResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_HomePage_GetRegions
+        else
+            Cmd.none
+
+
+reqCreateWorkspace : Model -> Cmd Msg
+reqCreateWorkspace model =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
+
+        secretAccessKey =
+            LoginPage.trySecretAccessKey model.loginPage
+    in
+        if allNonemptyStrings [ token, accessKeyId, secretAccessKey, model.selectedRegion ] then
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/ec2/" ++ accessKeyId
+                , body =
+                    Http.jsonBody <|
+                        Encode.object
+                            [ ( "secretAccessKey", Encode.string secretAccessKey )
+                            , ( "region", Encode.string model.selectedRegion )
+                            ]
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_HomePage_CreateWorkspace
+        else
+            Debug.log "NOT requesting create workspace" (toString <| [ token, accessKeyId, secretAccessKey, model.selectedRegion ])
+                |> always Cmd.none
+
+
+
+-- Instances
+
+
+reqInstances : Model -> String -> Cmd Msg
+reqInstances model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
+    in
+        if token /= "" && accessKeyId /= "" then
+            Http.request
+                { method = "GET"
+                , headers =
+                    [ Http.header "Authorization" ("Bearer " ++ token)
+                    , Http.header "x-dd-progress" progressKey
+                    ]
                 , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/instances"
                 , body = Http.emptyBody
                 , expect = Http.expectJson Instances.decodeInstances
@@ -781,9 +1031,9 @@ reqInstances model =
                 , withCredentials = False
                 }
                 |> RemoteData.sendRequest
-                |> Cmd.map Res_InstancesPage_GetInstances
+                |> Cmd.map (Res_InstancesPage_GetInstances progressKey)
         else
-            Cmd.none
+            deleteProgressKeyInCaseOfError progressKey
 
 
 
@@ -831,14 +1081,17 @@ reqProgressStatus model progressKey =
                 |> RemoteData.sendRequest
                 |> Cmd.map (Res_ProgressStatus progressKey)
         else
-            Cmd.none
+            deleteProgressKeyInCaseOfError progressKey
 
 
 reqGetClone : Model -> String -> (WebData Instances.Clone -> Msg) -> Cmd Msg
 reqGetClone model progressKey cb =
     let
-        ( token, accessKeyId ) =
-            ( LoginPage.tryGetToken model.loginPage, LoginPage.tryGetAccessKeyId model.loginPage )
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
     in
         if token /= "" && accessKeyId /= "" then
             Http.request
@@ -856,7 +1109,95 @@ reqGetClone model progressKey cb =
                 |> RemoteData.sendRequest
                 |> Cmd.map cb
         else
-            Cmd.none
+            deleteProgressKeyInCaseOfError progressKey
+
+
+allNonemptyStrings : List String -> Bool
+allNonemptyStrings strings =
+    strings
+        |> List.filter (\s -> s == "")
+        |> List.length
+        |> (==) 0
+
+
+reqPrepareForClone : Model -> (WebData CommonResponses.StringResponse -> Msg) -> Cmd Msg -> Cmd Msg
+reqPrepareForClone model cb errorHandler =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
+
+        secretAccessKey =
+            LoginPage.trySecretAccessKey model.loginPage
+    in
+        Debug.log "prepare" (toString [ token, accessKeyId, secretAccessKey, model.input_InstancesPage_SelectedInstance, model.selectedRegion, model.input_InstancesPage_KeypairName ])
+            |> always
+                (if allNonemptyStrings [ token, accessKeyId, secretAccessKey, model.input_InstancesPage_SelectedInstance, model.selectedRegion, model.input_InstancesPage_KeypairName ] then
+                    case model.input_InstancesPage_Keyfile of
+                        Just nf ->
+                            let
+                                body =
+                                    Http.multipartBody
+                                        [ Http.stringPart "InstanceId" model.input_InstancesPage_SelectedInstance
+                                        , Http.stringPart "accessKeyId" accessKeyId
+                                        , Http.stringPart "secretAccessKey" secretAccessKey
+                                        , Http.stringPart "region" model.selectedRegion
+                                        , Http.stringPart "keypair_name" model.input_InstancesPage_KeypairName
+                                        , FileReader.filePart "keyFile" nf
+                                        ]
+                            in
+                                Http.request
+                                    { method = "PUT"
+                                    , headers =
+                                        [ Http.header "Authorization" ("Bearer " ++ token)
+                                        ]
+                                    , url = "http://localhost:8083/ec2/" ++ accessKeyId
+                                    , body = body
+                                    , expect = Http.expectJson CommonResponses.decodeStringResponse
+                                    , timeout = Nothing
+                                    , withCredentials = False
+                                    }
+                                    |> RemoteData.sendRequest
+                                    |> Cmd.map cb
+
+                        Nothing ->
+                            errorHandler
+                 else
+                    errorHandler
+                )
+
+
+reqClone : Model -> String -> Cmd Msg
+reqClone model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        accessKeyId =
+            LoginPage.tryGetAccessKeyId model.loginPage
+    in
+        Debug.log "asdasdsd" (toString [ token, accessKeyId, model.input_InstancesPage_SelectedInstance ])
+            |> always
+                (if allNonemptyStrings [ token, accessKeyId, model.input_InstancesPage_SelectedInstance ] then
+                    Http.request
+                        { method = "GET"
+                        , headers =
+                            [ Http.header "Authorization" ("Bearer " ++ token)
+                            , Http.header "x-dd-progress" progressKey
+                            ]
+                        , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/" ++ model.input_InstancesPage_SelectedInstance ++ "/clone"
+                        , body = Http.emptyBody
+                        , expect = Http.expectJson CommonResponses.decodeStringResponse
+                        , timeout = Nothing
+                        , withCredentials = False
+                        }
+                        |> RemoteData.sendRequest
+                        |> Cmd.map (Res_InstancesPage_Clone progressKey)
+                 else
+                    deleteProgressKeyInCaseOfError progressKey
+                )
 
 
 
@@ -1061,6 +1402,12 @@ getContainerQuery model containerID =
         ]
 
 
+deleteProgressKeyInCaseOfError : String -> Cmd Msg
+deleteProgressKeyInCaseOfError key =
+    -- This won't work: Cmd.map (always <| NotSendingRequest_DeleteProgressKey key) Cmd.none
+    Task.perform (always <| NotSendingRequest_DeleteProgressKey key) (Task.succeed "")
+
+
 updateModelForGetCloneResponse : WebData Instances.Clone -> Model -> ( Model, String )
 updateModelForGetCloneResponse response model =
     let
@@ -1090,8 +1437,14 @@ sendRequestsBasedOnRoute model newRoute =
     case model.loginPage.authenticationState of
         Auth.LoggedIn _ ->
             case newRoute of
+                Router.LandingRoute ->
+                    ( { model | homePage = HomePage.updateRegionswebdata model.homePage RemoteData.Loading }, reqRegions model )
+
                 Router.CloneRoute ->
-                    ( { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage RemoteData.Loading }, reqInstances model )
+                    if model.selectedRegion /= "" then
+                        ( { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage RemoteData.Loading }, reqProgressKey model Req_InstancesPage_GetInstances )
+                    else
+                        model ! []
 
                 Router.ConvertRoute ->
                     case model.convertPage.cloneWebdata of

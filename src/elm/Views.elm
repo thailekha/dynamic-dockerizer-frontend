@@ -5,6 +5,7 @@ import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
 import Pages.Container as ContainerPage
+import Types.ProgressKeys as ProgressKeys
 import State exposing (..)
 import ViewComponents exposing (..)
 
@@ -102,6 +103,17 @@ homeView model =
                 view_ model
                     [ yellowDivMdl
                         [ textMdl ("Hi " ++ creds.userName)
+                        , if model.selectedRegion == "" then
+                            textMidMdl "Please select EC2 region"
+                          else
+                            textMidMdl <| "Selected EC2 region: " ++ model.selectedRegion ++ ", or you can select another region"
+                        , regionsSelectBox model
+                        , case model.homePage.awsConfigWebdata of
+                            RemoteData.Failure error ->
+                                textMdl <| "Cannot update region config" ++ (toString error)
+
+                            _ ->
+                                text ""
                         ]
                     ]
 
@@ -113,9 +125,40 @@ homeView model =
 
 instancesView : Model -> Html Msg
 instancesView model =
-    yellowDivMdl
-        [ instancesTableMdl model
-        ]
+    let
+        selectForClone =
+            case model.instancesPage.instancesWebdata of
+                RemoteData.NotAsked ->
+                    textMdl "Instances has not been fetched"
+
+                RemoteData.Loading ->
+                    progressBar model "Fetching instances" ProgressKeys.getInstances
+
+                RemoteData.Failure error ->
+                    textMdl (toString error)
+
+                RemoteData.Success res ->
+                    div []
+                        [ rightButtonMdl model 0 State.Req_InstancesPage_CloneInstance "Clone"
+                        , keyFileSelector model
+                        , inputMdl model 0 Input_InstancesPage_KeypairName "keypair_name" "text" "Key pair name"
+                        , instancesTableMdl model res.instances
+                        ]
+    in
+        yellowDivMdl
+            [ case model.instancesPage.cloneWebdata of
+                RemoteData.Loading ->
+                    progressBar model "Cloning instance" ProgressKeys.doClone
+
+                RemoteData.Failure error ->
+                    div []
+                        [ textMdl (toString error)
+                        , selectForClone
+                        ]
+
+                _ ->
+                    selectForClone
+            ]
 
 
 convertView : Model -> Html Msg

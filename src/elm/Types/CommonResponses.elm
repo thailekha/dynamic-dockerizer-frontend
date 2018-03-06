@@ -35,3 +35,14 @@ constructErr msg =
     , statusCode = -1
     , message = msg
     }
+
+
+type alias RegionsResponse =
+    { regions : List String
+    }
+
+
+decodeRegionsResponse : Decoder RegionsResponse
+decodeRegionsResponse =
+    map RegionsResponse
+        (field "regions" (list string))
