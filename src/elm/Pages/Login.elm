@@ -64,3 +64,13 @@ tryGetAccessKeyId model =
 
         Auth.LoggedOut ->
             ""
+
+
+trySecretAccessKey : Model -> String
+trySecretAccessKey model =
+    case model.authenticationState of
+        Auth.LoggedIn creds ->
+            creds.secretAccessKey
+
+        Auth.LoggedOut ->
+            ""

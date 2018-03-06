@@ -13,6 +13,7 @@ function resetLocalStorage() {
   localStorage.removeItem('secretAccessKey');
   localStorage.removeItem('token');
   localStorage.removeItem('ec2Url');
+  localStorage.removeItem('ec2Region');
 }
 
 function getStoredAuthData() {
@@ -22,6 +23,7 @@ function getStoredAuthData() {
   var storedSecretAccessKeyInput = localStorage.getItem('secretAccessKey');
   var storedToken = localStorage.getItem('token');
   var storedEc2Url = localStorage.getItem('ec2Url');
+  var storedEc2Region = localStorage.getItem('ec2Region');
 
   return storedUserNameInput
     && storedAccessKeyIdInput
@@ -32,7 +34,8 @@ function getStoredAuthData() {
       accessKeyId: storedAccessKeyIdInput,
       secretAccessKey: storedSecretAccessKeyInput,
       token: storedToken,
-      ec2Url: storedEc2Url ? storedEc2Url : ""
+      ec2Url: storedEc2Url ? storedEc2Url : "",
+      ec2Region: storedEc2Region ? storedEc2Region : ""
     }) : null;
 }
 
@@ -192,6 +195,13 @@ function setupElmPorts(elmApp) {
       return console.Error("saveEc2Url port some arguments are undefined");
     }
     localStorage.setItem('ec2Url', url);
+  });
+
+  elmApp.ports.saveEc2Region.subscribe(function(region) {
+    if (!is_js.existy(region)) {
+      return console.Error("saveEc2Url port some arguments are undefined");
+    }
+    localStorage.setItem('ec2Region', region);
   });
 
   elmApp.ports.logout.subscribe(function() {

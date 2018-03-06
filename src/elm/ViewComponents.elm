@@ -1,7 +1,7 @@
 module ViewComponents exposing (..)
 
-import Html exposing (Html, a, text, div, p, br, option, select, img)
-import Html.Attributes exposing (class, style, href, value, attribute, src, height, width)
+import Html exposing (Html, a, text, div, p, br, option, select, img, input)
+import Html.Attributes exposing (class, style, href, value, attribute, src, height, width, type_, multiple)
 import Html.Events exposing (on)
 import Material.Options as Options exposing (when, css)
 import Material.Button as Button
@@ -18,14 +18,14 @@ import Material.Progress as Loading
 import Material.Layout as Layout
 import Types.Auth as Auth
 import Types.Containers as Containers
+import Types.Instances as Instances
 import Types.Images as Images
 import Types.CommonResponses exposing (StringResponse)
 import Types.ContainerCreater as ContainerCreater
 import Types.ProgressKeys as ProgressKeys
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
-import Pages.Instances as InstancesPage
-import Pages.Convert as ConvertPage
+import Pages.Home as HomePage
 import Pages.Router as Router
 import State exposing (Model, Msg)
 import Set exposing (Set)
@@ -33,6 +33,7 @@ import Dict exposing (Dict)
 import Array
 import RemoteData exposing (WebData)
 import Json.Decode as Decode
+import FileReader
 
 
 centerDiv : List (Html msg) -> Html msg
@@ -396,36 +397,56 @@ imagesTableMdl model =
         ]
 
 
-instancesTableMdl : Model -> Html Msg
-instancesTableMdl model =
-    let
-        fetchedInstances =
-            InstancesPage.tryGetInstances model.instancesPage
-    in
-        if List.length fetchedInstances == 0 then
-            textMdl "No instances found"
-        else
-            Table.table []
-                [ Table.thead []
-                    [ Table.tr []
-                        [ Table.th [] [ text "Tags" ]
-                        , Table.th [] [ text "Id" ]
-                        , Table.th [] [ text "Public DNS" ]
-                        ]
+progressBar : Model -> String -> String -> Html Msg
+progressBar model message key =
+    Dict.values model.progressKeys
+        |> List.filter (\( x, _ ) -> x == key)
+        |> List.map
+            (\( _, progress ) ->
+                div []
+                    [ textMdl message
+                    , Loading.buffered progress progress
                     ]
-                , Table.tbody []
-                    (InstancesPage.tryGetInstances model.instancesPage
-                        |> List.indexedMap
-                            (\idx instance ->
-                                Table.tr
-                                    []
-                                    [ Table.td [] [ text <| toString instance.tags ]
-                                    , Table.td [] [ text <| toString instance.instanceId ]
-                                    , Table.td [] [ text <| toString instance.dns ]
-                                    ]
-                            )
-                    )
+            )
+        |> div []
+
+
+instancesTableMdl : Model -> List Instances.Instance -> Html Msg
+instancesTableMdl model fetchedInstances =
+    if List.length fetchedInstances == 0 then
+        textMdl "No instances found to be cloned"
+    else
+        Table.table []
+            [ Table.thead []
+                [ Table.tr []
+                    [ Table.th [] [ text "" ]
+                    , Table.th [] [ text "Tags" ]
+                    , Table.th [] [ text "Id" ]
+                    , Table.th [] [ text "Public DNS" ]
+                    ]
                 ]
+            , Table.tbody []
+                (fetchedInstances
+                    |> List.indexedMap
+                        (\idx instance ->
+                            Table.tr
+                                []
+                                [ Table.td []
+                                    [ Toggles.checkbox State.Mdl
+                                        [ idx ]
+                                        model.mdl
+                                        [ Options.onToggle (State.Input_InstancesPage_Toggle instance)
+                                        , Toggles.value <| instance.instanceId == model.input_InstancesPage_SelectedInstance
+                                        ]
+                                        []
+                                    ]
+                                , Table.td [] [ text <| toString instance.tags ]
+                                , Table.td [] [ text <| toString instance.instanceId ]
+                                , Table.td [] [ text <| toString instance.dns ]
+                                ]
+                        )
+                )
+            ]
 
 
 convertTableMdl : Model -> Html Msg
@@ -589,6 +610,21 @@ cssSelectBox =
         ]
 
 
+regionsSelectBox : Model -> Html Msg
+regionsSelectBox model =
+    model.homePage
+        |> HomePage.tryGetRegions
+        |> List.map
+            (\region ->
+                option [ value region ] [ text region ]
+            )
+        |> (::) (option [ attribute "disabled" "", attribute "selected" "", value "" ] [ text "-- select a region -- " ])
+        |> select
+            [ onChange State.Input_HomePage_Region
+            , cssSelectBox
+            ]
+
+
 imagesSelectBox : Model -> Html Msg
 imagesSelectBox model =
     model.imagesPage
@@ -620,6 +656,18 @@ consoleModeSelectBox =
             [ onChange State.Input_Gantry_ContainersPage_Create_ConsoleMode
             , cssSelectBox
             ]
+
+
+keyFileSelector : Model -> Html Msg
+keyFileSelector model =
+    div []
+        [ input
+            [ type_ "file"
+            , FileReader.onFileChange State.Input_InstancesPage_Keyfile
+            , multiple False
+            ]
+            []
+        ]
 
 
 protectedView : Model -> Html Msg -> Html Msg
