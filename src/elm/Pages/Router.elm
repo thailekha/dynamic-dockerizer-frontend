@@ -7,7 +7,9 @@ import UrlParser exposing (..)
 type Route
     = LandingRoute
     | CloneRoute
-    | ConvertRoute
+    | ConvertCloneViewRoute
+    | ConvertProcessesViewRoute
+    | ConvertProcessViewRoute String
     | GantryContainersViewRoute
     | GantryContainersCreateRoute
     | GantryContainerViewRoute String
@@ -20,7 +22,9 @@ matchers =
     oneOf
         [ map LandingRoute top
         , map CloneRoute <| s "clone"
-        , map ConvertRoute <| s "convert"
+        , map ConvertCloneViewRoute <| s "convert"
+        , map ConvertProcessesViewRoute <| s "convert" </> s "processes"
+        , map ConvertProcessViewRoute <| s "convert" </> s "processes" </> string
         , map GantryContainersViewRoute <| s "gantry" </> s "containers"
         , map GantryContainersCreateRoute <| s "gantry" </> s "containers" </> s "create"
         , map GantryImageRoute <| s "gantry" </> s "image"
@@ -34,6 +38,13 @@ globalTabs =
     , ( "Clone", "clone" )
     , ( "Convert", "convert" )
     , ( "Gantry", "gantry/containers" )
+    ]
+
+
+convertTabs : List ( String, String )
+convertTabs =
+    [ ( "Cloned Instance", "convert" )
+    , ( "Processes", "convert/processes" )
     ]
 
 

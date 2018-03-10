@@ -9,6 +9,7 @@ import Pages.Container as ContainerPage
 import Pages.Images as ImagesPage
 import Pages.Instances as InstancesPage
 import Pages.Convert as ConvertPage
+import Pages.Process as ProcessPage
 import Pages.Home as HomePage
 import Types.Auth as Auth
 import Types.Containers as Containers
@@ -36,6 +37,7 @@ type alias Model =
     , homePage : HomePage.Model
     , instancesPage : InstancesPage.Model
     , convertPage : ConvertPage.Model
+    , processPage : ProcessPage.Model
     , containersPage : ContainersPage.Model
     , containerCreatePage : ContainerCreatePage.Model
     , containerPage : ContainerPage.Model
@@ -44,6 +46,8 @@ type alias Model =
     , input_InstancesPage_Keyfile : Maybe NativeFile
     , input_InstancesPage_KeypairName : String
     , input_InstancesPage_SelectedInstance : String
+    , input_ConvertPage_SetCloneManually : Bool
+    , input_ConvertPage_Ec2Url : String
     , input_ConvertPage_SelectedProcesses : Set String
     , input_LoginPage_UserName : String
     , input_LoginPage_AccessKeyId : String
@@ -61,9 +65,8 @@ type alias Model =
     , input_Gantry_ContainersPage_Create_Tty : Bool
     , input_Gantry_ImagesPage : String
     , res_Gantry_ContainersPage_Create : WebData CommonResponses.PortResponse
-    , ec2_url_input : String
-    , ec2_url : String
-    , progressKeys : ProgressKeys.ProgressKeys
+    , master_progressKeys : ProgressKeys.ProgressKeys
+    , agent_progressKeys : ProgressKeys.ProgressKeys
     , route : Router.Route
     , mdl : Material.Model
     }
@@ -74,7 +77,24 @@ initModel config initialRoute =
     { loginPage = LoginPage.init config
     , homePage = HomePage.init
     , instancesPage = InstancesPage.init
-    , convertPage = ConvertPage.init
+    , convertPage =
+        let
+            initConvertPage =
+                ConvertPage.init
+        in
+            case config of
+                Just initialData ->
+                    case (decodeValue (field "ec2Url" string) initialData) of
+                        Ok ec2Url ->
+                            ConvertPage.updateCloneWebdata initConvertPage <| RemoteData.succeed <| Instances.manualClone ec2Url
+
+                        Err _ ->
+                            Debug.log "Cannot decode ec2Url from config" config
+                                |> always initConvertPage
+
+                Nothing ->
+                    initConvertPage
+    , processPage = ProcessPage.init
     , containersPage = ContainersPage.init
     , containerCreatePage = ContainerCreatePage.init
     , containerPage = ContainerPage.init
@@ -95,6 +115,8 @@ initModel config initialRoute =
     , input_InstancesPage_Keyfile = Nothing
     , input_InstancesPage_KeypairName = ""
     , input_InstancesPage_SelectedInstance = ""
+    , input_ConvertPage_SetCloneManually = False
+    , input_ConvertPage_Ec2Url = ""
     , input_ConvertPage_SelectedProcesses = Set.empty
     , input_LoginPage_UserName = ""
     , input_LoginPage_AccessKeyId = ""
@@ -112,21 +134,8 @@ initModel config initialRoute =
     , input_Gantry_ContainersPage_Create_Tty = True
     , input_Gantry_ImagesPage = ""
     , res_Gantry_ContainersPage_Create = RemoteData.NotAsked
-    , ec2_url_input = ""
-    , ec2_url =
-        case config of
-            Just initialData ->
-                case (decodeValue (field "ec2Url" string) initialData) of
-                    Ok ec2Url ->
-                        ec2Url
-
-                    Err _ ->
-                        Debug.log "Cannot decode ec2Url from config" config
-                            |> always ""
-
-            Nothing ->
-                ""
-    , progressKeys = ProgressKeys.init
+    , master_progressKeys = ProgressKeys.init
+    , agent_progressKeys = ProgressKeys.init
     , route = initialRoute
     , mdl = Material.model
     }
@@ -165,6 +174,10 @@ type Msg
     | Req_InstancesPage_PrepareForClone (WebData ProgressKeys.ProgressKey)
     | Req_InstancesPage_Clone String (WebData CommonResponses.StringResponse)
     | Res_InstancesPage_Clone String (WebData CommonResponses.StringResponse)
+    | Input_ConvertPage_SetCloneManually
+    | Input_ConvertPage_Ec2Url String
+    | Req_ConvertPage_GetProcessMetadata String (WebData ProgressKeys.ProgressKey)
+    | Res_ConvertPage_GetProcessMetadata String (WebData Processes.ProcessMetadata)
     | Input_Gantry_ContainersPage_ToggleAll
     | Input_Gantry_ContainersPage_Toggle Containers.Container
     | Res_Gantry_ContainersPage_Containers Value
@@ -199,18 +212,19 @@ type Msg
     | Input_Gantry_ImagesPage_Toggle Images.Image
     | Req_Gantry_ImagesPage_Remove
     | Res_Gantry_ImagesPage_Remove String (WebData CommonResponses.StringResponse)
-    | Ec2_URL_Input String
     | Ec2_URL_Set
-    | Ec2_URL_From_LocalStorage String
     | Ec2_URL_NotSet -- make a snackbar for this
+    | Req_GetProgressKey_Then_GetClone
     | Req_GetClone (WebData ProgressKeys.ProgressKey)
-    | Res_GetClone_Then_Req_GetProcess String (WebData Instances.Clone)
+    | Res_GetClone_Then_Req_GetProcess String (WebData Instances.ImportedAndCloned)
     | Res_GetProcesses (WebData Processes.Processes)
     | Input_ConvertPage_ToggleAll
     | Input_ConvertPage_Toggle Processes.Process
     | Req_ConvertProcesses
-    | Res_ConvertProcess String (WebData CommonResponses.StringResponse)
-    | Res_ProgressStatus String (WebData ProgressKeys.ProgressStatus)
+    | Req_DoConvertProcesses String (WebData ProgressKeys.ProgressKey)
+    | Res_ConvertProcess String String (WebData CommonResponses.StringResponse)
+    | Res_Master_ProgressStatus String (WebData ProgressKeys.ProgressStatus)
+    | Res_Agent_ProgressStatus String (WebData ProgressKeys.ProgressStatus)
     | NotSendingRequest_DeleteProgressKey String
     | OnLocationChange Location -- routing
     | Mdl (Material.Msg Msg) -- styling
@@ -352,7 +366,7 @@ update msg model =
             case progressKeyRes of
                 RemoteData.Success progressKey ->
                     ( { model
-                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.getInstances, 0 ) model.progressKeys
+                        | master_progressKeys = Dict.insert progressKey.key ( ProgressKeys.getInstances, "", 0 ) model.master_progressKeys
                       }
                     , reqInstances model progressKey.key
                     )
@@ -367,7 +381,7 @@ update msg model =
             case progressKeyRes of
                 RemoteData.Success progressKey ->
                     ( { model
-                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.doClone, 0 ) model.progressKeys
+                        | master_progressKeys = Dict.insert progressKey.key ( ProgressKeys.doClone, "", 0 ) model.master_progressKeys
                       }
                     , reqPrepareForClone model (Req_InstancesPage_Clone progressKey.key) (deleteProgressKeyInCaseOfError progressKey.key)
                     )
@@ -392,7 +406,7 @@ update msg model =
                 newModel =
                     { model
                         | instancesPage = InstancesPage.updateCloneWebdata model.instancesPage response
-                        , progressKeys = Dict.remove progressKey model.progressKeys
+                        , master_progressKeys = Dict.remove progressKey model.master_progressKeys
                     }
             in
                 case response of
@@ -649,21 +663,29 @@ update msg model =
                         ( model, Cmd.none )
 
         Req_Gantry_ContainersPage_Create ->
-            ( { model
-                | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage RemoteData.Loading
-              }
-            , reqCreateContainer <|
-                ContainerCreater.encodeContainerCreater
-                    (model.ec2_url ++ ":3001")
-                    (LoginPage.tryGetToken model.loginPage)
-                    model.input_Gantry_ContainersPage_Create_Name
-                    model.input_Gantry_ContainersPage_Create_Image
-                    model.input_Gantry_ContainersPage_Create_Bindings
-                    model.input_Gantry_ContainersPage_Create_Binds
-                    model.input_Gantry_ContainersPage_Create_Privileged
-                    model.input_Gantry_ContainersPage_Create_OpenStdin
-                    model.input_Gantry_ContainersPage_Create_Tty
-            )
+            let
+                cloneIP =
+                    ConvertPage.tryGetCloneIP model.convertPage
+            in
+                if cloneIP /= "" then
+                    ( { model
+                        | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage RemoteData.Loading
+                      }
+                    , reqCreateContainer <|
+                        ContainerCreater.encodeContainerCreater
+                            (cloneIP ++ ":3001")
+                            (LoginPage.tryGetToken model.loginPage)
+                            model.input_Gantry_ContainersPage_Create_Name
+                            model.input_Gantry_ContainersPage_Create_Image
+                            model.input_Gantry_ContainersPage_Create_Bindings
+                            model.input_Gantry_ContainersPage_Create_Binds
+                            model.input_Gantry_ContainersPage_Create_Privileged
+                            model.input_Gantry_ContainersPage_Create_OpenStdin
+                            model.input_Gantry_ContainersPage_Create_Tty
+                    )
+                else
+                    Debug.log "Error clone IP, not sending create container request" cloneIP
+                        |> always (model ! [])
 
         Res_Gantry_ContainersPage_Create response ->
             let
@@ -688,18 +710,38 @@ update msg model =
                     ! []
 
         Res_Gantry_ContainersPage_Management containerID response ->
-            ( { model
-                | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
-              }
-            , cmdForStringResponse (reqContainers <| getContainersQuery model) response
-            )
+            let
+                token =
+                    LoginPage.tryGetToken model.loginPage
+
+                cloneIP =
+                    ConvertPage.tryGetCloneIP model.convertPage
+            in
+                if token /= "" && cloneIP /= "" then
+                    ( { model
+                        | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
+                      }
+                    , cmdForStringResponse (reqContainers <| getContainersQuery token cloneIP) response
+                    )
+                else
+                    model ! []
 
         Res_Gantry_ContainerPage_Management containerID response ->
-            ( { model
-                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage response
-              }
-            , reqContainer <| getContainerQuery model containerID
-            )
+            let
+                token =
+                    LoginPage.tryGetToken model.loginPage
+
+                cloneIP =
+                    ConvertPage.tryGetCloneIP model.convertPage
+            in
+                if token /= "" && cloneIP /= "" then
+                    ( { model
+                        | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage response
+                      }
+                    , reqContainer <| getContainerQuery token cloneIP containerID
+                    )
+                else
+                    model ! []
 
         Res_Gantry_ImagesPage_Remove imageID response ->
             ( { model
@@ -708,24 +750,52 @@ update msg model =
             , cmdForStringResponse (reqImages model) response
             )
 
-        Ec2_URL_Input character ->
+        Input_ConvertPage_SetCloneManually ->
+            { model | input_ConvertPage_SetCloneManually = not model.input_ConvertPage_SetCloneManually } ! []
+
+        Input_ConvertPage_Ec2Url character ->
             { model
-                | ec2_url_input = character
+                | input_ConvertPage_Ec2Url = character
+            }
+                ! []
+
+        Req_ConvertPage_GetProcessMetadata pid progressKeyResponse ->
+            case progressKeyResponse of
+                RemoteData.Success progressKey ->
+                    ( { model
+                        | agent_progressKeys = Dict.insert progressKey.key ( ProgressKeys.getProcess, "", 0 ) model.agent_progressKeys
+                      }
+                    , reqGetProcessMetadata model progressKey.key pid
+                    )
+
+                _ ->
+                    model ! []
+
+        Res_ConvertPage_GetProcessMetadata progressKey response ->
+            { model
+                | processPage = ProcessPage.updateProcessWebdata model.processPage response
+                , agent_progressKeys = Dict.remove progressKey model.agent_progressKeys
             }
                 ! []
 
         Ec2_URL_Set ->
-            ( { model
-                | ec2_url = model.ec2_url_input
-              }
-            , saveEc2Url model.ec2_url_input
-            )
-
-        Ec2_URL_From_LocalStorage url ->
-            { model
-                | ec2_url = url
-            }
-                ! []
+            if String.length model.input_ConvertPage_Ec2Url > 0 then
+                let
+                    ip =
+                        if String.contains "http://" model.input_ConvertPage_Ec2Url then
+                            model.input_ConvertPage_Ec2Url
+                        else
+                            "http://" ++ model.input_ConvertPage_Ec2Url
+                in
+                    let
+                        newModel =
+                            { model
+                                | convertPage = ConvertPage.updateCloneWebdata model.convertPage <| RemoteData.succeed <| Instances.manualClone ip
+                            }
+                    in
+                        newModel ! [ saveEc2Url ip, reqGetProcesses model ]
+            else
+                model ! []
 
         Ec2_URL_NotSet ->
             model ! []
@@ -733,17 +803,20 @@ update msg model =
         Res_InstancesPage_GetInstances progressKey response ->
             { model
                 | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage response
-                , progressKeys = Dict.remove progressKey model.progressKeys
+                , master_progressKeys = Dict.remove progressKey model.master_progressKeys
             }
                 ! []
+
+        Req_GetProgressKey_Then_GetClone ->
+            { model | convertPage = ConvertPage.updateCloneWebdata model.convertPage RemoteData.Loading } ! [ reqProgressKey model Req_GetClone ]
 
         Req_GetClone progressKeyResponse ->
             case progressKeyResponse of
                 RemoteData.Success progressKey ->
                     ( { model
-                        | progressKeys = Dict.insert progressKey.key ( ProgressKeys.getClone, 0 ) model.progressKeys
+                        | master_progressKeys = Dict.insert progressKey.key ( ProgressKeys.getClone, "", 0 ) model.master_progressKeys
                       }
-                    , reqGetClone model progressKey.key (Res_GetClone_Then_Req_GetProcess progressKey.key)
+                    , reqGetImportedAndCloned model progressKey.key (Res_GetClone_Then_Req_GetProcess progressKey.key)
                     )
 
                 _ ->
@@ -752,11 +825,11 @@ update msg model =
         Res_GetClone_Then_Req_GetProcess progressKey response ->
             let
                 ( newModel, ec2Url ) =
-                    { model | progressKeys = Dict.remove progressKey model.progressKeys }
-                        |> updateModelForGetCloneResponse response
+                    { model | master_progressKeys = Dict.remove progressKey model.master_progressKeys }
+                        |> updateModelForGetImportedAndClonedResponse response
             in
                 if ec2Url /= "" then
-                    ( newModel, Cmd.batch [ saveEc2Url ec2Url, reqGetProcesses model ] )
+                    newModel ! [ saveEc2Url ec2Url, reqGetProcesses model ]
                 else
                     newModel ! []
 
@@ -790,21 +863,47 @@ update msg model =
                 ! []
 
         Req_ConvertProcesses ->
-            ( updateConvertPageFromSelectedProcesses model
-            , batchReqConvertProcesses model <| reqConvertProcess model
-            )
+            (updateConvertPageFromSelectedProcesses model)
+                ! (model.input_ConvertPage_SelectedProcesses
+                    |> Set.toList
+                    |> List.map (\pid -> reqProgressKey model (Req_DoConvertProcesses pid))
+                  )
 
-        Res_ConvertProcess pid response ->
+        Req_DoConvertProcesses pid progressKeyResponse ->
+            case progressKeyResponse of
+                RemoteData.Success progressKey ->
+                    ( { model
+                        | agent_progressKeys = Dict.insert progressKey.key ( ProgressKeys.convertProcess, pid, 0 ) model.agent_progressKeys
+                      }
+                    , reqConvertProcess model progressKey.key pid
+                    )
+
+                _ ->
+                    model ! []
+
+        Res_ConvertProcess progressKey pid response ->
             { model
                 | convertPage = ConvertPage.updateProcessesConvertWebdata model.convertPage pid response
+                , agent_progressKeys = Dict.remove progressKey model.agent_progressKeys
             }
                 ! []
 
-        Res_ProgressStatus progressKey response ->
+        Res_Master_ProgressStatus progressKey response ->
             case response of
                 RemoteData.Success progressStatus ->
                     { model
-                        | progressKeys = Dict.update progressKey (\maybeStatus -> Maybe.map (\( x, _ ) -> ( x, progressStatus.status )) maybeStatus) model.progressKeys
+                        | master_progressKeys = Dict.update progressKey (\maybeStatus -> Maybe.map (\( x, y, _ ) -> ( x, y, progressStatus.status )) maybeStatus) model.master_progressKeys
+                    }
+                        ! []
+
+                _ ->
+                    model ! []
+
+        Res_Agent_ProgressStatus progressKey response ->
+            case response of
+                RemoteData.Success progressStatus ->
+                    { model
+                        | agent_progressKeys = Dict.update progressKey (\maybeStatus -> Maybe.map (\( x, y, _ ) -> ( x, y, progressStatus.status )) maybeStatus) model.agent_progressKeys
                     }
                         ! []
 
@@ -813,7 +912,7 @@ update msg model =
 
         NotSendingRequest_DeleteProgressKey progressKey ->
             Debug.log "Request canceled, deleting progressKey" progressKey
-                |> always ({ model | progressKeys = Dict.remove progressKey model.progressKeys } ! [])
+                |> always ({ model | master_progressKeys = Dict.remove progressKey model.master_progressKeys } ! [])
 
         OnLocationChange location ->
             let
@@ -830,12 +929,19 @@ update msg model =
             Material.update Mdl msg_ model
 
         Tick _ ->
-            ( model
-            , model.progressKeys
-                |> Dict.keys
-                |> List.map (\progressKey -> reqProgressStatus model progressKey)
-                |> Cmd.batch
-            )
+            Debug.log "progress keys" (toString [ model.master_progressKeys, model.agent_progressKeys ])
+                |> always
+                    ( model
+                    , [ model.master_progressKeys
+                            |> Dict.keys
+                            |> List.map (\progressKey -> reqProgressStatusMaster model progressKey)
+                      , model.agent_progressKeys
+                            |> Dict.keys
+                            |> List.map (\progressKey -> reqProgressStatusAgent model progressKey)
+                      ]
+                        |> List.concat
+                        |> Cmd.batch
+                    )
 
         NoChange ->
             ( model, Cmd.none )
@@ -1062,8 +1168,8 @@ reqProgressKey model cb =
             Cmd.none
 
 
-reqProgressStatus : Model -> String -> Cmd Msg
-reqProgressStatus model progressKey =
+reqProgressStatusMaster : Model -> String -> Cmd Msg
+reqProgressStatusMaster model progressKey =
     let
         token =
             LoginPage.tryGetToken model.loginPage
@@ -1079,13 +1185,38 @@ reqProgressStatus model progressKey =
                 , withCredentials = False
                 }
                 |> RemoteData.sendRequest
-                |> Cmd.map (Res_ProgressStatus progressKey)
+                |> Cmd.map (Res_Master_ProgressStatus progressKey)
         else
             deleteProgressKeyInCaseOfError progressKey
 
 
-reqGetClone : Model -> String -> (WebData Instances.Clone -> Msg) -> Cmd Msg
-reqGetClone model progressKey cb =
+reqProgressStatusAgent : Model -> String -> Cmd Msg
+reqProgressStatusAgent model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":8081" ++ "/progress/status/" ++ progressKey
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Agent_ProgressStatus progressKey)
+        else
+            deleteProgressKeyInCaseOfError progressKey
+
+
+reqGetImportedAndCloned : Model -> String -> (WebData Instances.ImportedAndCloned -> Msg) -> Cmd Msg
+reqGetImportedAndCloned model progressKey cb =
     let
         token =
             LoginPage.tryGetToken model.loginPage
@@ -1100,9 +1231,9 @@ reqGetClone model progressKey cb =
                     [ Http.header "Authorization" ("Bearer " ++ token)
                     , Http.header "x-dd-progress" progressKey
                     ]
-                , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/clone"
+                , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/importedandcloned"
                 , body = Http.emptyBody
-                , expect = Http.expectJson Instances.decodeClone
+                , expect = Http.expectJson Instances.decodeImportedAndCloned
                 , timeout = Nothing
                 , withCredentials = False
                 }
@@ -1132,41 +1263,38 @@ reqPrepareForClone model cb errorHandler =
         secretAccessKey =
             LoginPage.trySecretAccessKey model.loginPage
     in
-        Debug.log "prepare" (toString [ token, accessKeyId, secretAccessKey, model.input_InstancesPage_SelectedInstance, model.selectedRegion, model.input_InstancesPage_KeypairName ])
-            |> always
-                (if allNonemptyStrings [ token, accessKeyId, secretAccessKey, model.input_InstancesPage_SelectedInstance, model.selectedRegion, model.input_InstancesPage_KeypairName ] then
-                    case model.input_InstancesPage_Keyfile of
-                        Just nf ->
-                            let
-                                body =
-                                    Http.multipartBody
-                                        [ Http.stringPart "InstanceId" model.input_InstancesPage_SelectedInstance
-                                        , Http.stringPart "accessKeyId" accessKeyId
-                                        , Http.stringPart "secretAccessKey" secretAccessKey
-                                        , Http.stringPart "region" model.selectedRegion
-                                        , Http.stringPart "keypair_name" model.input_InstancesPage_KeypairName
-                                        , FileReader.filePart "keyFile" nf
-                                        ]
-                            in
-                                Http.request
-                                    { method = "PUT"
-                                    , headers =
-                                        [ Http.header "Authorization" ("Bearer " ++ token)
-                                        ]
-                                    , url = "http://localhost:8083/ec2/" ++ accessKeyId
-                                    , body = body
-                                    , expect = Http.expectJson CommonResponses.decodeStringResponse
-                                    , timeout = Nothing
-                                    , withCredentials = False
-                                    }
-                                    |> RemoteData.sendRequest
-                                    |> Cmd.map cb
+        if allNonemptyStrings [ token, accessKeyId, secretAccessKey, model.input_InstancesPage_SelectedInstance, model.selectedRegion, model.input_InstancesPage_KeypairName ] then
+            case model.input_InstancesPage_Keyfile of
+                Just nf ->
+                    let
+                        body =
+                            Http.multipartBody
+                                [ Http.stringPart "InstanceId" model.input_InstancesPage_SelectedInstance
+                                , Http.stringPart "accessKeyId" accessKeyId
+                                , Http.stringPart "secretAccessKey" secretAccessKey
+                                , Http.stringPart "region" model.selectedRegion
+                                , Http.stringPart "keypair_name" model.input_InstancesPage_KeypairName
+                                , FileReader.filePart "keyFile" nf
+                                ]
+                    in
+                        Http.request
+                            { method = "PUT"
+                            , headers =
+                                [ Http.header "Authorization" ("Bearer " ++ token)
+                                ]
+                            , url = "http://localhost:8083/ec2/" ++ accessKeyId
+                            , body = body
+                            , expect = Http.expectJson CommonResponses.decodeStringResponse
+                            , timeout = Nothing
+                            , withCredentials = False
+                            }
+                            |> RemoteData.sendRequest
+                            |> Cmd.map cb
 
-                        Nothing ->
-                            errorHandler
-                 else
+                Nothing ->
                     errorHandler
-                )
+        else
+            errorHandler
 
 
 reqClone : Model -> String -> Cmd Msg
@@ -1178,26 +1306,23 @@ reqClone model progressKey =
         accessKeyId =
             LoginPage.tryGetAccessKeyId model.loginPage
     in
-        Debug.log "asdasdsd" (toString [ token, accessKeyId, model.input_InstancesPage_SelectedInstance ])
-            |> always
-                (if allNonemptyStrings [ token, accessKeyId, model.input_InstancesPage_SelectedInstance ] then
-                    Http.request
-                        { method = "GET"
-                        , headers =
-                            [ Http.header "Authorization" ("Bearer " ++ token)
-                            , Http.header "x-dd-progress" progressKey
-                            ]
-                        , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/" ++ model.input_InstancesPage_SelectedInstance ++ "/clone"
-                        , body = Http.emptyBody
-                        , expect = Http.expectJson CommonResponses.decodeStringResponse
-                        , timeout = Nothing
-                        , withCredentials = False
-                        }
-                        |> RemoteData.sendRequest
-                        |> Cmd.map (Res_InstancesPage_Clone progressKey)
-                 else
-                    deleteProgressKeyInCaseOfError progressKey
-                )
+        if allNonemptyStrings [ token, accessKeyId, model.input_InstancesPage_SelectedInstance ] then
+            Http.request
+                { method = "GET"
+                , headers =
+                    [ Http.header "Authorization" ("Bearer " ++ token)
+                    , Http.header "x-dd-progress" progressKey
+                    ]
+                , url = "http://localhost:8083/ec2/" ++ accessKeyId ++ "/" ++ model.input_InstancesPage_SelectedInstance ++ "/clone"
+                , body = Http.emptyBody
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_InstancesPage_Clone progressKey)
+        else
+            deleteProgressKeyInCaseOfError progressKey
 
 
 
@@ -1209,12 +1334,15 @@ reqGetProcesses model =
     let
         token =
             LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
     in
-        if token /= "" then
+        if token /= "" && cloneIP /= "" then
             Http.request
                 { method = "GET"
                 , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = model.ec2_url ++ ":8081" ++ "/process"
+                , url = cloneIP ++ ":8081" ++ "/process"
                 , body = Http.emptyBody
                 , expect = Http.expectJson Processes.decodeProcesses
                 , timeout = Nothing
@@ -1226,26 +1354,60 @@ reqGetProcesses model =
             Cmd.none
 
 
-reqConvertProcess : Model -> String -> Cmd Msg
-reqConvertProcess model pid =
+reqGetProcessMetadata : Model -> String -> String -> Cmd Msg
+reqGetProcessMetadata model progressKey pid =
     let
         token =
             LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
     in
-        if token /= "" && model.ec2_url /= "" then
+        if token /= "" && cloneIP /= "" then
             Http.request
                 { method = "GET"
-                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = model.ec2_url ++ ":8081" ++ "/process/" ++ pid ++ "/convert"
+                , headers =
+                    [ Http.header "Authorization" ("Bearer " ++ token)
+                    , Http.header "x-dd-progress" progressKey
+                    ]
+                , url = cloneIP ++ ":8081" ++ "/process/" ++ pid
+                , body = Http.emptyBody
+                , expect = Http.expectJson Processes.decodeProcessMetadata
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_ConvertPage_GetProcessMetadata progressKey)
+        else
+            deleteProgressKeyInCaseOfError progressKey
+
+
+reqConvertProcess : Model -> String -> String -> Cmd Msg
+reqConvertProcess model progressKey pid =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers =
+                    [ Http.header "Authorization" ("Bearer " ++ token)
+                    , Http.header "x-dd-progress" progressKey
+                    ]
+                , url = cloneIP ++ ":8081" ++ "/process/" ++ pid ++ "/convert"
                 , body = Http.emptyBody
                 , expect = Http.expectJson CommonResponses.decodeStringResponse
                 , timeout = Nothing
                 , withCredentials = False
                 }
                 |> RemoteData.sendRequest
-                |> Cmd.map (Res_ConvertProcess pid)
+                |> Cmd.map (Res_ConvertProcess progressKey pid)
         else
-            Cmd.none
+            deleteProgressKeyInCaseOfError progressKey
 
 
 
@@ -1254,32 +1416,52 @@ reqConvertProcess model pid =
 
 reqContainerManagement : Model -> String -> String -> String -> Cmd Msg
 reqContainerManagement model verb suffix containerID =
-    Http.request
-        { method = verb
-        , headers = [ Http.header "Authorization" ("Bearer " ++ (LoginPage.tryGetToken model.loginPage)) ]
-        , url = model.ec2_url ++ ":3001" ++ "/api/containers/" ++ containerID ++ suffix
-        , body = Http.emptyBody
-        , expect = Http.expectJson CommonResponses.decodeStringResponse
-        , timeout = Nothing
-        , withCredentials = False
-        }
-        |> RemoteData.sendRequest
-        |> Cmd.map (Res_Gantry_ContainersPage_Management containerID)
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = verb
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/containers/" ++ containerID ++ suffix
+                , body = Http.emptyBody
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Gantry_ContainersPage_Management containerID)
+        else
+            Cmd.none
 
 
 reqContainerManagement2 : Model -> String -> String -> String -> Cmd Msg
 reqContainerManagement2 model verb suffix containerID =
-    Http.request
-        { method = verb
-        , headers = [ Http.header "Authorization" ("Bearer " ++ (LoginPage.tryGetToken model.loginPage)) ]
-        , url = model.ec2_url ++ ":3001" ++ "/api/containers/" ++ containerID ++ suffix
-        , body = Http.emptyBody
-        , expect = Http.expectJson CommonResponses.decodeStringResponse
-        , timeout = Nothing
-        , withCredentials = False
-        }
-        |> RemoteData.sendRequest
-        |> Cmd.map (Res_Gantry_ContainerPage_Management containerID)
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = verb
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/containers/" ++ containerID ++ suffix
+                , body = Http.emptyBody
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Gantry_ContainerPage_Management containerID)
+        else
+            Cmd.none
 
 
 
@@ -1288,32 +1470,52 @@ reqContainerManagement2 model verb suffix containerID =
 
 reqImages : Model -> Cmd Msg
 reqImages model =
-    Http.request
-        { method = "GET"
-        , headers = [ Http.header "Authorization" ("Bearer " ++ (LoginPage.tryGetToken model.loginPage)) ]
-        , url = model.ec2_url ++ ":3001" ++ "/api/images/"
-        , body = Http.emptyBody
-        , expect = Http.expectJson Images.decodeImages
-        , timeout = Nothing
-        , withCredentials = False
-        }
-        |> RemoteData.sendRequest
-        |> Cmd.map Res_Gantry_ImagesPage_Get
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/images/"
+                , body = Http.emptyBody
+                , expect = Http.expectJson Images.decodeImages
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_Gantry_ImagesPage_Get
+        else
+            Cmd.none
 
 
 reqRemoveImage : Model -> String -> Cmd Msg
 reqRemoveImage model imageID =
-    Http.request
-        { method = "DELETE"
-        , headers = [ Http.header "Authorization" ("Bearer " ++ (LoginPage.tryGetToken model.loginPage)) ]
-        , url = model.ec2_url ++ ":3001" ++ "/api/images/" ++ imageID
-        , body = Http.emptyBody
-        , expect = Http.expectJson CommonResponses.decodeStringResponse
-        , timeout = Nothing
-        , withCredentials = False
-        }
-        |> RemoteData.sendRequest
-        |> Cmd.map (Res_Gantry_ImagesPage_Remove imageID)
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "DELETE"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/images/" ++ imageID
+                , body = Http.emptyBody
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Gantry_ImagesPage_Remove imageID)
+        else
+            Cmd.none
 
 
 allContainersSelected : Model -> Bool
@@ -1370,11 +1572,6 @@ batchReqImages model reqCb =
     Cmd.batch <| List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
 
 
-batchReqConvertProcesses : Model -> (String -> Cmd Msg) -> Cmd Msg
-batchReqConvertProcesses model reqCb =
-    Cmd.batch <| List.map (\pid -> reqCb pid) <| Set.toList model.input_ConvertPage_SelectedProcesses
-
-
 cmdForStringResponse : Cmd Msg -> WebData CommonResponses.StringResponse -> Cmd Msg
 cmdForStringResponse cb response =
     case response of
@@ -1385,19 +1582,19 @@ cmdForStringResponse cb response =
             Cmd.none
 
 
-getContainersQuery : Model -> Value
-getContainersQuery model =
+getContainersQuery : String -> String -> Value
+getContainersQuery token cloneIP =
     Encode.object
-        [ ( "url", Encode.string (model.ec2_url ++ ":3001") )
-        , ( "token", Encode.string <| LoginPage.tryGetToken model.loginPage )
+        [ ( "url", Encode.string (cloneIP ++ ":3001") )
+        , ( "token", Encode.string token )
         ]
 
 
-getContainerQuery : Model -> String -> Value
-getContainerQuery model containerID =
+getContainerQuery : String -> String -> String -> Value
+getContainerQuery token cloneIP containerID =
     Encode.object
-        [ ( "url", Encode.string (model.ec2_url ++ ":3001") )
-        , ( "token", Encode.string <| LoginPage.tryGetToken model.loginPage )
+        [ ( "url", Encode.string (cloneIP ++ ":3001") )
+        , ( "token", Encode.string token )
         , ( "containerID", Encode.string containerID )
         ]
 
@@ -1408,21 +1605,20 @@ deleteProgressKeyInCaseOfError key =
     Task.perform (always <| NotSendingRequest_DeleteProgressKey key) (Task.succeed "")
 
 
-updateModelForGetCloneResponse : WebData Instances.Clone -> Model -> ( Model, String )
-updateModelForGetCloneResponse response model =
+updateModelForGetImportedAndClonedResponse : WebData Instances.ImportedAndCloned -> Model -> ( Model, String )
+updateModelForGetImportedAndClonedResponse response model =
     let
         newModel =
             ConvertPage.updateCloneWebdata model.convertPage response
     in
         case response of
             RemoteData.Success response ->
-                case response.clone of
+                case response.cloned of
                     Just clone ->
                         ( { model
                             | convertPage = newModel
-                            , ec2_url = "http://" ++ clone.dns
                           }
-                        , "http://" ++ clone.dns
+                        , "http://" ++ clone.publicIp
                         )
 
                     Nothing ->
@@ -1436,41 +1632,58 @@ sendRequestsBasedOnRoute : Model -> Router.Route -> ( Model, Cmd Msg )
 sendRequestsBasedOnRoute model newRoute =
     case model.loginPage.authenticationState of
         Auth.LoggedIn _ ->
-            case newRoute of
-                Router.LandingRoute ->
-                    ( { model | homePage = HomePage.updateRegionswebdata model.homePage RemoteData.Loading }, reqRegions model )
+            let
+                token =
+                    LoginPage.tryGetToken model.loginPage
 
-                Router.CloneRoute ->
-                    if model.selectedRegion /= "" then
-                        ( { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage RemoteData.Loading }, reqProgressKey model Req_InstancesPage_GetInstances )
-                    else
+                cloneIP =
+                    ConvertPage.tryGetCloneIP model.convertPage
+            in
+                (case newRoute of
+                    Router.LandingRoute ->
+                        ( { model | homePage = HomePage.updateRegionswebdata model.homePage RemoteData.Loading }, reqRegions model )
+
+                    Router.CloneRoute ->
+                        if model.selectedRegion /= "" then
+                            ( { model | instancesPage = InstancesPage.updateInstancesWebdata model.instancesPage RemoteData.Loading }, reqProgressKey model Req_InstancesPage_GetInstances )
+                        else
+                            model ! []
+
+                    Router.ConvertProcessesViewRoute ->
+                        case model.convertPage.cloneWebdata of
+                            RemoteData.Success _ ->
+                                model ! [ reqGetProcesses model ]
+
+                            _ ->
+                                model ! []
+
+                    Router.ConvertProcessViewRoute pid ->
+                        if token /= "" && cloneIP /= "" then
+                            { model | processPage = ProcessPage.updateProcessWebdata model.processPage RemoteData.Loading } ! [ reqProgressKey model (Req_ConvertPage_GetProcessMetadata pid) ]
+                        else
+                            model ! []
+
+                    Router.GantryContainersViewRoute ->
+                        if token /= "" && cloneIP /= "" then
+                            ( model, reqContainers <| getContainersQuery token cloneIP )
+                        else
+                            model ! []
+
+                    Router.GantryContainerViewRoute containerID ->
+                        if token /= "" && cloneIP /= "" then
+                            ( model, reqContainer <| getContainerQuery token cloneIP containerID )
+                        else
+                            model ! []
+
+                    Router.GantryContainersCreateRoute ->
+                        ( model, reqImages model )
+
+                    Router.GantryImageRoute ->
+                        ( model, reqImages model )
+
+                    _ ->
                         model ! []
-
-                Router.ConvertRoute ->
-                    case model.convertPage.cloneWebdata of
-                        RemoteData.Success _ ->
-                            model ! []
-
-                        RemoteData.Loading ->
-                            model ! []
-
-                        _ ->
-                            ( { model | convertPage = ConvertPage.updateCloneWebdata model.convertPage RemoteData.Loading }, reqProgressKey model Req_GetClone )
-
-                Router.GantryContainersViewRoute ->
-                    ( model, reqContainers <| getContainersQuery model )
-
-                Router.GantryContainerViewRoute containerID ->
-                    ( model, reqContainer <| getContainerQuery model containerID )
-
-                Router.GantryContainersCreateRoute ->
-                    ( model, reqImages model )
-
-                Router.GantryImageRoute ->
-                    ( model, reqImages model )
-
-                _ ->
-                    model ! []
+                )
 
         Auth.LoggedOut ->
             model ! []

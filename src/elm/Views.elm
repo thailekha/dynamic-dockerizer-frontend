@@ -5,6 +5,7 @@ import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
 import Pages.Container as ContainerPage
+import Pages.Process as ProcessPage
 import Types.ProgressKeys as ProgressKeys
 import State exposing (..)
 import ViewComponents exposing (..)
@@ -32,9 +33,22 @@ view model =
                 [ instancesView model
                 ]
 
-        Router.ConvertRoute ->
+        Router.ConvertCloneViewRoute ->
             view_ model
-                [ convertView model
+                [ navMdl 1 0 model <| tabLabels Router.convertTabs
+                , convertCloneView model
+                ]
+
+        Router.ConvertProcessesViewRoute ->
+            view_ model
+                [ navMdl 1 1 model <| tabLabels Router.convertTabs
+                , convertProcessesView model
+                ]
+
+        Router.ConvertProcessViewRoute pid ->
+            view_ model
+                [ navMdl 1 1 model <| tabLabels Router.convertTabs
+                , convertProcessView model pid
                 ]
 
         Router.GantryContainersViewRoute ->
@@ -132,7 +146,7 @@ instancesView model =
                     textMdl "Instances has not been fetched"
 
                 RemoteData.Loading ->
-                    progressBar model "Fetching instances" ProgressKeys.getInstances
+                    progressBar model.master_progressKeys "Fetching instances" ProgressKeys.getInstances ""
 
                 RemoteData.Failure error ->
                     textMdl (toString error)
@@ -148,7 +162,7 @@ instancesView model =
         yellowDivMdl
             [ case model.instancesPage.cloneWebdata of
                 RemoteData.Loading ->
-                    progressBar model "Cloning instance" ProgressKeys.doClone
+                    progressBar model.master_progressKeys "Cloning instance" ProgressKeys.doClone ""
 
                 RemoteData.Failure error ->
                     div []
@@ -161,13 +175,48 @@ instancesView model =
             ]
 
 
-convertView : Model -> Html Msg
-convertView model =
+convertCloneView : Model -> Html Msg
+convertCloneView model =
     yellowDivMdl
         [ convertTableMdl model
-        , hr [] []
-        , processesTableMdl model
         ]
+
+
+convertProcessesView : Model -> Html Msg
+convertProcessesView model =
+    yellowDivMdl
+        [ processesTableMdl model
+        ]
+
+
+convertProcessView : Model -> String -> Html Msg
+convertProcessView model pid =
+    case model.processPage.processWebData of
+        RemoteData.NotAsked ->
+            textMdl "Process not fetched"
+
+        RemoteData.Success foundProcess ->
+            yellowDivMdl
+                [ case model.processPage.processConvertWebData of
+                    RemoteData.NotAsked ->
+                        br [] []
+
+                    RemoteData.Loading ->
+                        textMdl "Loading ..."
+
+                    RemoteData.Success webdata ->
+                        textMdl <| toString webdata
+
+                    RemoteData.Failure error ->
+                        textMdl <| toString error
+                , processTableMdl foundProcess
+                ]
+
+        RemoteData.Loading ->
+            progressBar model.agent_progressKeys "Fetching process" ProgressKeys.getProcess ""
+
+        RemoteData.Failure error ->
+            textMdl <| toString error
 
 
 containersListView : Model -> Html Msg
