@@ -5,7 +5,7 @@ import Dict exposing (Dict)
 
 
 type alias ProgressKeys =
-    Dict String ( String, Float )
+    Dict String ( String, String, Float )
 
 
 init : ProgressKeys
@@ -26,6 +26,16 @@ doClone =
 getInstances : String
 getInstances =
     "get_instances"
+
+
+convertProcess : String
+convertProcess =
+    "convert_process"
+
+
+getProcess : String
+getProcess =
+    "get_process"
 
 
 type alias ProgressKey =

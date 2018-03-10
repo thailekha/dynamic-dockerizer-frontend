@@ -19,6 +19,7 @@ import Material.Layout as Layout
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.Instances as Instances
+import Types.Processes as Processes
 import Types.Images as Images
 import Types.CommonResponses exposing (StringResponse)
 import Types.ContainerCreater as ContainerCreater
@@ -350,6 +351,43 @@ containerTableMdl container =
         ]
 
 
+processTableMdl : Processes.ProcessMetadata -> Html Msg
+processTableMdl process =
+    Table.table []
+        [ Table.thead [] []
+        , Table.tbody []
+            [ Table.tr []
+                [ Table.td [] [ text "Command" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text process.cmdline ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Executable" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text process.exe ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Binary" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text process.bin ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Entrypoint command" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text process.entrypointCmd ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Entrypoint arguments" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text <| toString process.entrypointArgs ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Working directory" ]
+                , Table.td [ Options.css "text-align" "left" ] [ text process.cwd ]
+                ]
+            , Table.tr []
+                [ Table.td [] [ text "Packages required" ]
+                , Table.td [ Options.css "text-align" "left" ] (List.concat <| List.map (\pkg -> [ text pkg, br [] [] ]) <| process.packagesSequence)
+                ]
+            ]
+        ]
+
+
 imagesTableMdl : Model -> Html Msg
 imagesTableMdl model =
     Table.table []
@@ -397,18 +435,26 @@ imagesTableMdl model =
         ]
 
 
-progressBar : Model -> String -> String -> Html Msg
-progressBar model message key =
-    Dict.values model.progressKeys
-        |> List.filter (\( x, _ ) -> x == key)
-        |> List.map
-            (\( _, progress ) ->
-                div []
-                    [ textMdl message
-                    , Loading.buffered progress progress
-                    ]
-            )
-        |> div []
+progressBar : ProgressKeys.ProgressKeys -> String -> String -> String -> Html Msg
+progressBar progressKeys message key subKey =
+    let
+        bars =
+            Dict.values progressKeys
+                |> List.filter (\( x, y, _ ) -> x == key && y == subKey)
+                |> List.map
+                    (\( _, _, progress ) ->
+                        div []
+                            [ Loading.buffered progress progress
+                            , br [] []
+                            ]
+                    )
+    in
+        if List.length bars > 0 then
+            bars
+                |> (::) (div [] [ textMdl message ])
+                |> div []
+        else
+            div [] bars
 
 
 instancesTableMdl : Model -> List Instances.Instance -> Html Msg
@@ -423,6 +469,7 @@ instancesTableMdl model fetchedInstances =
                     , Table.th [] [ text "Tags" ]
                     , Table.th [] [ text "Id" ]
                     , Table.th [] [ text "Public DNS" ]
+                    , Table.th [] [ text "Public IP" ]
                     ]
                 ]
             , Table.tbody []
@@ -443,6 +490,7 @@ instancesTableMdl model fetchedInstances =
                                 , Table.td [] [ text <| toString instance.tags ]
                                 , Table.td [] [ text <| toString instance.instanceId ]
                                 , Table.td [] [ text <| toString instance.dns ]
+                                , Table.td [] [ text <| toString instance.publicIp ]
                                 ]
                         )
                 )
@@ -451,45 +499,63 @@ instancesTableMdl model fetchedInstances =
 
 convertTableMdl : Model -> Html Msg
 convertTableMdl model =
-    case model.convertPage.cloneWebdata of
-        RemoteData.NotAsked ->
-            textMdl "Clone has not been fetched"
-
-        RemoteData.Loading ->
-            Dict.values model.progressKeys
-                |> List.filter (\( x, _ ) -> x == ProgressKeys.getClone)
-                |> List.map (\( _, progress ) -> Loading.buffered progress progress)
-                |> div []
-
-        RemoteData.Failure error ->
-            textMdl (toString error)
-
-        RemoteData.Success fetchedClone ->
-            case fetchedClone.clone of
-                Nothing ->
-                    textMdl "No clone found"
-
-                Just clone ->
+    let
+        query =
+            div []
+                [ checkbox model model.input_ConvertPage_SetCloneManually State.Input_ConvertPage_SetCloneManually "Set clone manually"
+                , if model.input_ConvertPage_SetCloneManually then
                     div []
-                        [ textMdl "Found clone"
-                        , Table.table []
-                            [ Table.thead []
-                                [ Table.tr []
-                                    [ Table.th [] [ text "Tags" ]
-                                    , Table.th [] [ text "Id" ]
-                                    , Table.th [] [ text "Public DNS" ]
-                                    ]
-                                ]
-                            , Table.tbody []
-                                [ Table.tr
-                                    []
-                                    [ Table.td [] [ text <| toString clone.tags ]
-                                    , Table.td [] [ text <| toString clone.instanceId ]
-                                    , Table.td [] [ text <| toString clone.dns ]
-                                    ]
-                                ]
-                            ]
+                        [ inputMdl model 1 State.Input_ConvertPage_Ec2Url "ec2Url" "text" "IP address"
+                        , buttonMdl model 2 State.Ec2_URL_Set "Set"
                         ]
+                  else
+                    buttonMdl model 0 State.Req_GetProgressKey_Then_GetClone "Find clone"
+                ]
+    in
+        case model.convertPage.cloneWebdata of
+            RemoteData.NotAsked ->
+                query
+
+            RemoteData.Loading ->
+                progressBar model.master_progressKeys "Fetching clone" ProgressKeys.getClone ""
+
+            RemoteData.Failure error ->
+                div []
+                    [ textMdl (toString error)
+                    , query
+                    ]
+
+            RemoteData.Success fetchedClone ->
+                div []
+                    [ query
+                    , case fetchedClone.cloned of
+                        Nothing ->
+                            textMdl "No clone found"
+
+                        Just clone ->
+                            div []
+                                [ textMdl "Found clone"
+                                , Table.table []
+                                    [ Table.thead []
+                                        [ Table.tr []
+                                            [ Table.th [] [ text "Tags" ]
+                                            , Table.th [] [ text "Id" ]
+                                            , Table.th [] [ text "Public DNS" ]
+                                            , Table.th [] [ text "Public IP" ]
+                                            ]
+                                        ]
+                                    , Table.tbody []
+                                        [ Table.tr
+                                            []
+                                            [ Table.td [] [ text <| toString clone.tags ]
+                                            , Table.td [] [ text <| toString clone.instanceId ]
+                                            , Table.td [] [ text <| toString clone.dns ]
+                                            , Table.td [] [ text <| toString clone.publicIp ]
+                                            ]
+                                        ]
+                                    ]
+                                ]
+                    ]
 
 
 processesTableMdl : Model -> Html Msg
@@ -523,6 +589,7 @@ processesTableMdl model =
                             , Table.th [] [ text "Pid" ]
                             , Table.th [] [ text "Port" ]
                             , Table.th [] [ text "Program" ]
+                            , Table.th [] [ text "Status" ]
                             ]
                         ]
                     , Table.tbody []
@@ -540,9 +607,10 @@ processesTableMdl model =
                                                 ]
                                                 []
                                             ]
-                                        , Table.td [] [ text <| toString p.pid ]
+                                        , Table.td [] [ a [ href ("#/convert/processes/" ++ p.pid) ] [ text <| toString p.pid ] ]
                                         , Table.td [] [ text <| toString p.port_ ]
                                         , Table.td [] [ text <| toString p.program ]
+                                        , Table.td [] [ progressBar model.agent_progressKeys "Converting " ProgressKeys.convertProcess p.pid ]
                                         ]
                                 )
                         )

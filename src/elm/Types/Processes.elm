@@ -27,3 +27,26 @@ decodeProcess =
         (field "pid" string)
         (field "port" string)
         (field "program" string)
+
+
+type alias ProcessMetadata =
+    { cmdline : String
+    , exe : String
+    , bin : String
+    , entrypointCmd : String
+    , entrypointArgs : List String
+    , cwd : String
+    , packagesSequence : List String
+    }
+
+
+decodeProcessMetadata : Decoder ProcessMetadata
+decodeProcessMetadata =
+    map7 ProcessMetadata
+        (field "cmdline" string)
+        (field "exe" string)
+        (field "bin" string)
+        (field "entrypointCmd" string)
+        (field "entrypointArgs" (list string))
+        (field "cwd" string)
+        (field "packagesSequence" (list string))

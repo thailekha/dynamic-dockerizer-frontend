@@ -127,7 +127,7 @@ function sendReqContainers(elmApp, port, url, token) {
       }
 
       const dataForElm = res.body.containers.map(c => {
-        c['Created'] = c['Created'] + '';
+        c['Created'] = `${c['Created']}`;
         c['Privileged'] = "unknown";
         return c;
       });
@@ -167,7 +167,7 @@ function sendReqContainer(elmApp, port, url, token, containerID) {
       dataForElm['ImageID'] = dataForElm['Image'];
       dataForElm['Command'] = dataForElm['Config']['Cmd'].join(' ');
       dataForElm['Status'] = dataForElm['State']['Status'];
-      dataForElm['Privileged'] = dataForElm['HostConfig']['Privileged'] + '';
+      dataForElm['Privileged'] = `${dataForElm['HostConfig']['Privileged']}`;
 
       elmApp.ports[port].send({
         statusCode: res.statusCode,

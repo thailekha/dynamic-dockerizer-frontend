@@ -8,7 +8,7 @@ import Dict exposing (Dict)
 
 
 type alias Model =
-    { cloneWebdata : WebData Clone
+    { cloneWebdata : WebData ImportedAndCloned
     , processesWebdata : WebData Processes
     , processesConvertWebdata : Dict String (WebData StringResponse)
     }
@@ -22,7 +22,7 @@ init =
     }
 
 
-updateCloneWebdata : Model -> WebData Clone -> Model
+updateCloneWebdata : Model -> WebData ImportedAndCloned -> Model
 updateCloneWebdata model response =
     { model
         | cloneWebdata = response
@@ -58,3 +58,18 @@ tryGetProcesses model =
 
         _ ->
             []
+
+
+tryGetCloneIP : Model -> String
+tryGetCloneIP model =
+    case model.cloneWebdata of
+        RemoteData.Success res ->
+            case res.cloned of
+                Just cloned ->
+                    cloned.publicIp
+
+                Nothing ->
+                    ""
+
+        _ ->
+            ""
