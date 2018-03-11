@@ -27,6 +27,7 @@ import Types.ProgressKeys as ProgressKeys
 import Pages.Containers as ContainersPage
 import Pages.Images as ImagesPage
 import Pages.Home as HomePage
+import Pages.Convert as ConvertPage
 import Pages.Router as Router
 import State exposing (Model, Msg)
 import Set exposing (Set)
@@ -509,7 +510,26 @@ convertTableMdl model =
                         , buttonMdl model 2 State.Ec2_URL_Set "Set"
                         ]
                   else
-                    buttonMdl model 0 State.Req_GetProgressKey_Then_GetClone "Find clone"
+                    buttonMdl model 0 State.Req_GetProgressKey_Then_GetClone "Fetch clone"
+                ]
+
+        status =
+            div []
+                [ case model.convertPage.checkhostWebdata of
+                    RemoteData.Success res ->
+                        text res.message
+
+                    _ ->
+                        text "Unkown"
+                , case model.convertPage.destroyWebdata of
+                    RemoteData.Loading ->
+                        progressBar model.master_progressKeys "Destroying" ProgressKeys.destroyClone ""
+
+                    RemoteData.Failure error ->
+                        text (toString error)
+
+                    _ ->
+                        text ""
                 ]
     in
         case model.convertPage.cloneWebdata of
@@ -534,23 +554,34 @@ convertTableMdl model =
 
                         Just clone ->
                             div []
-                                [ textMdl "Found clone"
+                                [ Html.hr [] []
+                                , if clone.instanceId /= "" then
+                                    buttonMdl model -1 State.ConvertPage_Destroy "Destroy"
+                                  else
+                                    text ""
+                                , textMdl "Found clone"
                                 , Table.table []
-                                    [ Table.thead []
-                                        [ Table.tr []
-                                            [ Table.th [] [ text "Tags" ]
-                                            , Table.th [] [ text "Id" ]
-                                            , Table.th [] [ text "Public DNS" ]
-                                            , Table.th [] [ text "Public IP" ]
-                                            ]
-                                        ]
+                                    [ Table.thead [] []
                                     , Table.tbody []
-                                        [ Table.tr
-                                            []
-                                            [ Table.td [] [ text <| toString clone.tags ]
+                                        [ Table.tr []
+                                            [ Table.td [] [ text "Tags" ]
+                                            , Table.td [] [ text <| toString clone.tags ]
+                                            ]
+                                        , Table.tr []
+                                            [ Table.td [] [ text "Id" ]
                                             , Table.td [] [ text <| toString clone.instanceId ]
+                                            ]
+                                        , Table.tr []
+                                            [ Table.td [] [ text "Public DNS" ]
                                             , Table.td [] [ text <| toString clone.dns ]
+                                            ]
+                                        , Table.tr []
+                                            [ Table.td [] [ text "Public IP" ]
                                             , Table.td [] [ text <| toString clone.publicIp ]
+                                            ]
+                                        , Table.tr []
+                                            [ Table.td [] [ text "Status" ]
+                                            , Table.td [] [ status ]
                                             ]
                                         ]
                                     ]

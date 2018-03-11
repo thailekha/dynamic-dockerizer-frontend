@@ -9,23 +9,65 @@ import Dict exposing (Dict)
 
 type alias Model =
     { cloneWebdata : WebData ImportedAndCloned
+    , checkhostWebdata : WebData StringResponse
     , processesWebdata : WebData Processes
     , processesConvertWebdata : Dict String (WebData StringResponse)
+    , destroyWebdata : WebData StringResponse
     }
 
 
 init : Model
 init =
     { cloneWebdata = RemoteData.NotAsked
+    , checkhostWebdata = RemoteData.NotAsked
     , processesWebdata = RemoteData.NotAsked
     , processesConvertWebdata = Dict.empty
+    , destroyWebdata = RemoteData.NotAsked
     }
 
 
 updateCloneWebdata : Model -> WebData ImportedAndCloned -> Model
 updateCloneWebdata model response =
+    let
+        nResponse =
+            (case response of
+                RemoteData.Success response ->
+                    { response
+                        | cloned =
+                            Maybe.map
+                                (\clone ->
+                                    { clone
+                                        | publicIp =
+                                            if String.contains "http://" clone.publicIp then
+                                                clone.publicIp
+                                            else
+                                                "http://" ++ clone.publicIp
+                                    }
+                                )
+                                response.cloned
+                    }
+                        |> RemoteData.succeed
+
+                _ ->
+                    response
+            )
+    in
+        { model
+            | cloneWebdata = nResponse
+        }
+
+
+updateCheckhostWebdata : Model -> WebData StringResponse -> Model
+updateCheckhostWebdata model response =
     { model
-        | cloneWebdata = response
+        | checkhostWebdata = response
+    }
+
+
+updateDestroywebdata : Model -> WebData StringResponse -> Model
+updateDestroywebdata model response =
+    { model
+        | destroyWebdata = response
     }
 
 
