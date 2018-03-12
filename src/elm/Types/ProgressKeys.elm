@@ -38,6 +38,11 @@ getProcess =
     "get_process"
 
 
+destroyClone : String
+destroyClone =
+    "destroy_Clone"
+
+
 type alias ProgressKey =
     { key : String
     }
