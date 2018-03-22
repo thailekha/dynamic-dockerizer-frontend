@@ -29,13 +29,3 @@ updateAwsconfigwebdata model response =
     { model
         | awsConfigWebdata = response
     }
-
-
-tryGetRegions : Model -> List String
-tryGetRegions model =
-    case model.regionsWebdata of
-        RemoteData.Success response ->
-            response.regions
-
-        _ ->
-            []

@@ -1,11 +1,11 @@
 module Pages.ContainerCreate exposing (..)
 
 import RemoteData exposing (WebData)
-import Types.CommonResponses exposing (PortResponse)
+import Types.CommonResponses exposing (..)
 
 
 type alias Model =
-    { containerCreateWebdata : WebData PortResponse
+    { containerCreateWebdata : WebData StringResponse
     }
 
 
@@ -15,7 +15,7 @@ init =
     }
 
 
-updateContainerCreateWebdata : Model -> WebData PortResponse -> Model
+updateContainerCreateWebdata : Model -> WebData StringResponse -> Model
 updateContainerCreateWebdata model response =
     { model
         | containerCreateWebdata = response

@@ -30,13 +30,3 @@ updateContainerManagementWebData model response =
     { model
         | containerManagementWebData = response
     }
-
-
-tryGetContainer : Model -> Result (WebData ContainerGet) Container
-tryGetContainer model =
-    case model.containerWebdata of
-        RemoteData.Success response ->
-            Ok response.container
-
-        _ ->
-            Err model.containerWebdata

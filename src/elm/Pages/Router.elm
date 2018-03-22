@@ -37,7 +37,7 @@ globalTabs =
     [ ( "Home", "" )
     , ( "Clone", "clone" )
     , ( "Convert", "convert" )
-    , ( "Gantry", "gantry/containers" )
+    , ( "Containers/Images Lifecycle", "gantry/containers" )
     ]
 
 
@@ -57,8 +57,8 @@ gantryTabs =
 
 containersTabs : List ( String, String )
 containersTabs =
-    [ ( "CONTAINERS", "gantry/containers" )
-    , ( "CREATE NEW", "gantry/containers/create" )
+    [ ( "List", "gantry/containers" )
+    , ( "Create new", "gantry/containers/create" )
     ]
 
 
