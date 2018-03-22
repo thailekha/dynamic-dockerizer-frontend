@@ -36,12 +36,10 @@ encodeBinding bindings =
         |> list
 
 
-encodeContainerCreater : String -> String -> String -> String -> List ( String, String ) -> List String -> Bool -> Bool -> Bool -> Value
-encodeContainerCreater gantryUrl token name image bindings binds privileged openStdin tty =
+encodeContainerCreater : String -> String -> List ( String, String ) -> List String -> Bool -> Bool -> Bool -> Value
+encodeContainerCreater name image bindings binds privileged openStdin tty =
     object
-        [ ( "url", string gantryUrl )
-        , ( "token", string token )
-        , ( "name", string name )
+        [ ( "name", string name )
         , ( "image", string image )
         , ( "bindings", encodeBinding bindings )
         , ( "binds", list <| List.map string binds )

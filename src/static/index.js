@@ -1,7 +1,6 @@
 // inject bundled Elm app into div#main
 var Elm = require( '../elm/Main' );
 var is_js = require('../../node_modules/is_js/is.min.js');
-var request = require('../../node_modules/superagent/superagent.js');
 
 function logLocalStorage() {
   console.warn(localStorage);
@@ -39,9 +38,9 @@ function getStoredAuthData() {
     }) : null;
 }
 
-function sendReqCreateContainer(elmApp, port, url, token, name, image, bindings, binds, privileged, openStdin, tty) {
+function getCreateContainerRequestBody(elmApp, port, name, image, bindings, binds, privileged, openStdin, tty) {
   //TODO: verify object structure
-  if (!is_js.all.existy(url, token, name, image, bindings, binds, privileged, openStdin, tty)) {
+  if (!is_js.all.existy(name, image, bindings, binds, privileged, openStdin, tty)) {
     return elmApp.ports[port].send("Error some arguments are undefined");
   }
 
@@ -82,100 +81,24 @@ function sendReqCreateContainer(elmApp, port, url, token, name, image, bindings,
   data["ExposedPorts"] = exposedPorts;
   data["HostConfig"]["PortBindings"] = portBindings;
 
-  request
-    .post(`${url}/api/containers/create`)
-    .send(data)
-    .set('accept', 'json')
-    .set('Authorization', `Bearer ${token}`)
-    .end((err, res) => {
-      console.warn(err);
-      console.warn(res);
-      if (err) {
-        return elmApp.ports[port].send({
-          statusCode: (res && res.statusCode) ? res.statusCode : -1,
-          success: false,
-          message: is_js.existy(res.body) ? JSON.stringify(res.body) : "Error request create container"
-        });
-      }
-      elmApp.ports[port].send({
-        statusCode: res.statusCode,
-        success: true,
-        message: "",
-        body: res.body.message
-      });
-    });
+  elmApp.ports[port].send(data);
 }
 
-function sendReqContainers(elmApp, port, url, token) {
-  if (!is_js.all.existy(url, token)) {
+function reformatContainerValue(elmApp, port, unformattedContainer) {
+  if (!is_js.all.existy(unformattedContainer, unformattedContainer.container)) {
     return elmApp.ports[port].send("Error some arguments are undefined");
   }
 
-  request
-    .get(`${url}/api/containers/all`)
-    .set('accept', 'json')
-    .set('Authorization', `Bearer ${token}`)
-    .end((err, res) => {
-      console.warn(err);
-      console.warn(res);
-      if (err) {
-        return elmApp.ports[port].send({
-          statusCode: (res && res.statusCode) ? res.statusCode : -1,
-          succes: false,
-          message: is_js.existy(res.body) ? JSON.stringify(res.body) : "Error request all containers"
-        });
-      }
+  const container = unformattedContainer.container;
 
-      const dataForElm = res.body.containers.map(c => {
-        c['Created'] = `${c['Created']}`;
-        c['Privileged'] = "unknown";
-        return c;
-      });
+  container['Names'] = [container['Name']];
+  container['ImageID'] = container['Image'];
+  container['Command'] = container['Config']['Cmd'].join(' ');
+  container['Status'] = container['State']['Status'];
+  container['Privileged'] = `${container['HostConfig']['Privileged']}`;
+  container['Created'] = isNaN(Date.parse(container['Created'])) ? -1 : Date.parse(container['Created']);
 
-      elmApp.ports[port].send({
-        statusCode: res.statusCode,
-        success: true,
-        message: "",
-        containers: dataForElm
-      });
-    });
-}
-
-function sendReqContainer(elmApp, port, url, token, containerID) {
-  if (!is_js.all.existy(url, token, containerID)) {
-    return elmApp.ports[port].send("Error some arguments are undefined");
-  }
-
-  request
-    .get(`${url}/api/containers/${containerID}`)
-    .set('accept', 'json')
-    .set('Authorization', `Bearer ${token}`)
-    .end((err, res) => {
-      console.warn(err);
-      console.warn(res);
-      if (err) {
-        return elmApp.ports[port].send({
-          statusCode: (res && res.statusCode) ? res.statusCode : -1,
-          succes: false,
-          message: is_js.existy(res.body) ? JSON.stringify(res.body) : "Error request all containers"
-        });
-      }
-
-      const dataForElm = res.body.container;
-
-      dataForElm['Names'] = [dataForElm['Name']];
-      dataForElm['ImageID'] = dataForElm['Image'];
-      dataForElm['Command'] = dataForElm['Config']['Cmd'].join(' ');
-      dataForElm['Status'] = dataForElm['State']['Status'];
-      dataForElm['Privileged'] = `${dataForElm['HostConfig']['Privileged']}`;
-
-      elmApp.ports[port].send({
-        statusCode: res.statusCode,
-        success: true,
-        message: "",
-        container: dataForElm
-      });
-    });
+  elmApp.ports[port].send({container});
 }
 
 function setupElmPorts(elmApp) {
@@ -209,16 +132,13 @@ function setupElmPorts(elmApp) {
     resetLocalStorage();
   });
 
-  elmApp.ports.reqCreateContainer.subscribe(function({url, token, name, image, bindings, binds, privileged, openStdin, tty}) {
-    sendReqCreateContainer(elmApp, 'onCreateContainerResponse', url, token, name, image, bindings, binds, privileged, openStdin, tty);
+  elmApp.ports.getCreateContainerRequestBody.subscribe(function({name, image, bindings, binds, privileged, openStdin, tty}) {
+    getCreateContainerRequestBody(elmApp, 'createContainerRequestBody', name, image, bindings, binds, privileged, openStdin, tty);
   });
 
-  elmApp.ports.reqContainers.subscribe(function({url, token}) {
-    sendReqContainers(elmApp, 'onContainersResponse', url, token);
-  });
-
-  elmApp.ports.reqContainer.subscribe(function({url, token, containerID}) {
-    sendReqContainer(elmApp, 'onContainerResponse', url, token, containerID);
+  elmApp.ports.reformatContainerValue.subscribe(function(container) {
+    console.warn(container);
+    reformatContainerValue(elmApp, 'formatedContainerValue', container);
   });
 }
 

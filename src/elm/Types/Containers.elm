@@ -16,7 +16,7 @@ type alias Containers =
 decodeContainers : Decoder Containers
 decodeContainers =
     map Containers
-        (field "containers" (list decodeContainer))
+        (field "containers" (list decodeContainerIgnorePrivileged))
 
 
 type alias Container =
@@ -25,9 +25,9 @@ type alias Container =
     , image : String
     , imageID : String
     , command : String
-    , created : String
+    , created : Int
     , status : String
-    , privileged : String
+    , privileged : Maybe String
     }
 
 
@@ -39,9 +39,33 @@ decodeContainer =
         (field "Image" string)
         (field "ImageID" string)
         (field "Command" string)
-        (field "Created" string)
+        (field "Created" int)
         (field "Status" string)
-        (field "Privileged" string)
+        (field "Privileged" (maybe string))
+
+
+decodeContainerIgnorePrivileged : Decoder Container
+decodeContainerIgnorePrivileged =
+    let
+        alwaysNothing =
+            (\res ->
+                case res of
+                    _ ->
+                        succeed Nothing
+            )
+    in
+        map8 Container
+            (field "Id" string)
+            (field "Names" (list string))
+            (field "Image" string)
+            (field "ImageID" string)
+            (field "Command" string)
+            (field "Created" int)
+            (field "Status" string)
+            (field "Privileged" (maybe string)
+                |> maybe
+                |> andThen alwaysNothing
+            )
 
 
 type alias ContainerGet =

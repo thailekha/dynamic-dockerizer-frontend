@@ -5,10 +5,10 @@ import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
 import Pages.Container as ContainerPage
-import Pages.Process as ProcessPage
 import Types.ProgressKeys as ProgressKeys
 import State exposing (..)
 import ViewComponents exposing (..)
+import Material.Snackbar as Snackbar
 
 
 globalView : Model -> Html Msg
@@ -24,59 +24,70 @@ globalView model =
 
 view : Model -> Html Msg
 view model =
-    case model.route of
-        Router.LandingRoute ->
-            homeView model
+    div []
+        [ case model.route of
+            Router.LandingRoute ->
+                homeView model
 
-        Router.CloneRoute ->
-            view_ model
-                [ instancesView model
-                ]
+            Router.CloneRoute ->
+                view_ "Clone"
+                    model
+                    [ instancesView model
+                    ]
 
-        Router.ConvertCloneViewRoute ->
-            view_ model
-                [ navMdl 1 0 model <| tabLabels Router.convertTabs
-                , convertCloneView model
-                ]
+            Router.ConvertCloneViewRoute ->
+                view_ "Convert"
+                    model
+                    [ navMdl 1 0 model <| tabLabels Router.convertTabs
+                    , convertCloneView model
+                    ]
 
-        Router.ConvertProcessesViewRoute ->
-            view_ model
-                [ navMdl 1 1 model <| tabLabels Router.convertTabs
-                , convertProcessesView model
-                ]
+            Router.ConvertProcessesViewRoute ->
+                view_ "Convert"
+                    model
+                    [ navMdl 1 1 model <| tabLabels Router.convertTabs
+                    , convertProcessesView model
+                    ]
 
-        Router.ConvertProcessViewRoute pid ->
-            view_ model
-                [ navMdl 1 1 model <| tabLabels Router.convertTabs
-                , convertProcessView model pid
-                ]
+            Router.ConvertProcessViewRoute pid ->
+                view_ "Convert"
+                    model
+                    [ navMdl 1 1 model <| tabLabels Router.convertTabs
+                    , convertProcessView model pid
+                    ]
 
-        Router.GantryContainersViewRoute ->
-            view_ model
-                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
-                , containersListView model
-                ]
+            Router.GantryContainersViewRoute ->
+                view_ "Containers/Images Lifecycle"
+                    model
+                    [ navMdl 1 0 model <| tabLabels Router.gantryTabs
+                    , containersListView model
+                    ]
 
-        Router.GantryContainersCreateRoute ->
-            view_ model
-                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
-                , containersCreateView model
-                ]
+            Router.GantryContainersCreateRoute ->
+                view_ "Containers/Images Lifecycle"
+                    model
+                    [ navMdl 1 0 model <| tabLabels Router.gantryTabs
+                    , containersCreateView model
+                    ]
 
-        Router.GantryContainerViewRoute containerID ->
-            view_ model
-                [ navMdl 1 0 model <| tabLabels Router.gantryTabs
-                , containerView model containerID
-                ]
+            Router.GantryContainerViewRoute containerID ->
+                view_ "Containers/Images Lifecycle"
+                    model
+                    [ navMdl 1 0 model <| tabLabels Router.gantryTabs
+                    , containerView model containerID
+                    ]
 
-        Router.GantryImageRoute ->
-            view_ model
-                [ navMdl 1 1 model <| tabLabels Router.gantryTabs
-                , imagesView model
-                ]
+            Router.GantryImageRoute ->
+                view_ "Containers/Images Lifecycle"
+                    model
+                    [ navMdl 1 1 model <| tabLabels Router.gantryTabs
+                    , imagesView model
+                    ]
 
-        Router.NotFoundRoute ->
-            e404 model
+            Router.NotFoundRoute ->
+                e404 model
+        , Snackbar.view model.snackbar |> Html.map Snackbar
+        ]
 
 
 loginView : Model -> Html Msg
@@ -88,13 +99,13 @@ loginView model =
                     textMdl "Please login"
 
                 RemoteData.Loading ->
-                    textMdl "Loading ..."
+                    httpLoadingMessage "Loading ..."
 
                 RemoteData.Success rooms ->
                     textMdl "Error"
 
                 RemoteData.Failure error ->
-                    textMdl (toString error)
+                    httpFailureMessage "login" error
               )
             , inputMdl model 0 Input_LoginPage_UserName "userName" "text" "User name"
             , inputMdl model 1 Input_LoginPage_AccessKeyId "accessKeyId" "text" "Access key ID"
@@ -114,17 +125,35 @@ homeView model =
     div []
         [ (case model.loginPage.authenticationState of
             Auth.LoggedIn creds ->
-                view_ model
+                view_ "Home"
+                    model
                     [ yellowDivMdl
                         [ textMdl ("Hi " ++ creds.userName)
                         , if model.selectedRegion == "" then
-                            textMidMdl "Please select EC2 region"
+                            text ""
                           else
-                            textMidMdl <| "Selected EC2 region: " ++ model.selectedRegion ++ ", or you can select another region"
-                        , regionsSelectBox model
+                            textMidMdl <| "Selected EC2 region: " ++ model.selectedRegion
+                        , case model.homePage.regionsWebdata of
+                            RemoteData.NotAsked ->
+                                textMdl "Regions has not been fetched"
+
+                            RemoteData.Failure error ->
+                                httpFailureMessage "fetch regions" error
+
+                            RemoteData.Success res ->
+                                div []
+                                    [ if model.selectedRegion == "" then
+                                        textMidMdl "Select a region"
+                                      else
+                                        textMidMdl "Or select another region"
+                                    , regionsSelectBox res.regions
+                                    ]
+
+                            _ ->
+                                text ""
                         , case model.homePage.awsConfigWebdata of
                             RemoteData.Failure error ->
-                                textMdl <| "Cannot update region config" ++ (toString error)
+                                httpFailureMessage "update region config" error
 
                             _ ->
                                 text ""
@@ -149,14 +178,11 @@ instancesView model =
                     progressBar model.master_progressKeys "Fetching instances" ProgressKeys.getInstances ""
 
                 RemoteData.Failure error ->
-                    textMdl (toString error)
+                    httpFailureMessage "fetch instances" error
 
                 RemoteData.Success res ->
                     div []
-                        [ rightButtonMdl model 0 State.Req_InstancesPage_CloneInstance "Clone"
-                        , keyFileSelector model
-                        , inputMdl model 0 Input_InstancesPage_KeypairName "keypair_name" "text" "Key pair name"
-                        , instancesTableMdl model res.instances
+                        [ instancesTableMdl model res.instances
                         ]
     in
         yellowDivMdl
@@ -166,11 +192,17 @@ instancesView model =
 
                 RemoteData.Failure error ->
                     div []
-                        [ textMdl (toString error)
+                        [ httpFailureMessage "clone the instance" error
                         , selectForClone
                         ]
 
-                _ ->
+                RemoteData.Success res ->
+                    div []
+                        [ httpSuccessMessage res.message
+                        , selectForClone
+                        ]
+
+                RemoteData.NotAsked ->
                     selectForClone
             ]
 
@@ -197,82 +229,70 @@ convertProcessView model pid =
 
         RemoteData.Success foundProcess ->
             yellowDivMdl
-                [ case model.processPage.processConvertWebData of
-                    RemoteData.NotAsked ->
-                        br [] []
-
-                    RemoteData.Loading ->
-                        textMdl "Loading ..."
-
-                    RemoteData.Success webdata ->
-                        textMdl <| toString webdata
-
-                    RemoteData.Failure error ->
-                        textMdl <| toString error
-                , processTableMdl foundProcess
+                [ processTableMdl foundProcess
                 ]
 
         RemoteData.Loading ->
             progressBar model.agent_progressKeys "Fetching process" ProgressKeys.getProcess ""
 
         RemoteData.Failure error ->
-            textMdl <| toString error
+            httpFailureMessage "fetch the process" error
 
 
 containersListView : Model -> Html Msg
 containersListView model =
     whiteDivMdl
         [ navMdl 2 0 model <| tabLabels Router.containersTabs
-        , (let
-            managementStatus =
-                containersManagementWebDataString model
-           in
-            if List.length managementStatus > 0 then
-                div []
-                    [ textMdl "Management status"
-                    , listMdl managementStatus
-                    ]
-            else
-                textMdl "No management status"
-          )
-        , buttonMdl model 1 State.Req_Gantry_ContainersPage_Start "Start"
-        , buttonMdl model 2 State.Req_Gantry_ContainersPage_Stop "Stop"
-        , buttonMdl model 3 State.Req_Gantry_ContainersPage_Restart "Restart"
-        , buttonMdl model 4 State.Req_Gantry_ContainersPage_Pause "Pause"
-        , buttonMdl model 5 State.Req_Gantry_ContainersPage_UnPause "Unpause"
-        , buttonMdl model 6 State.Req_Gantry_ContainersPage_Delete "Delete"
-        , yellowDivMdl [ containersTableMdl model ]
+        , yellowDivMdl
+            [ case model.containersPage.containersWebdata of
+                RemoteData.NotAsked ->
+                    textMdl "Containers has not been fetched"
+
+                RemoteData.Loading ->
+                    httpLoadingMessage "Loading ..."
+
+                RemoteData.Success webdata ->
+                    containersTableMdl model webdata.containers
+
+                RemoteData.Failure error ->
+                    httpFailureMessage "fetch containers" error
+            ]
         ]
 
 
 containerView : Model -> String -> Html Msg
 containerView model containerID =
-    case ContainerPage.tryGetContainer model.containerPage of
-        Ok foundContainer ->
+    case model.containerPage.containerWebdata of
+        RemoteData.NotAsked ->
+            textMdl "Containers has not been fetched"
+
+        RemoteData.Loading ->
+            httpLoadingMessage "Loading ..."
+
+        RemoteData.Success webdata ->
             yellowDivMdl
                 [ case model.containerPage.containerManagementWebData of
                     RemoteData.NotAsked ->
                         br [] []
 
                     RemoteData.Loading ->
-                        textMdl "Loading ..."
+                        httpLoadingMessage "Loading ..."
 
                     RemoteData.Success webdata ->
-                        textMdl <| toString webdata
+                        httpSuccessMessage webdata.message
 
                     RemoteData.Failure error ->
-                        textMdl <| toString error
-                , buttonMdl model 1 (State.Req_Gantry_ContainerPage_Start foundContainer.id) "Start"
-                , buttonMdl model 2 (State.Req_Gantry_ContainerPage_Stop foundContainer.id) "Stop"
-                , buttonMdl model 3 (State.Req_Gantry_ContainerPage_Restart foundContainer.id) "Restart"
-                , buttonMdl model 4 (State.Req_Gantry_ContainerPage_Pause foundContainer.id) "Pause"
-                , buttonMdl model 5 (State.Req_Gantry_ContainerPage_UnPause foundContainer.id) "Unpause"
-                , textMdl "Information"
-                , containerTableMdl foundContainer
+                        httpFailureMessage "manage the container" error
+                , buttonMdl model 1 (State.Req_Gantry_ContainerPage_Start webdata.container.id) "Start"
+                , buttonMdl model 2 (State.Req_Gantry_ContainerPage_Stop webdata.container.id) "Stop"
+                , buttonMdl model 3 (State.Req_Gantry_ContainerPage_Restart webdata.container.id) "Restart"
+                , buttonMdl model 4 (State.Req_Gantry_ContainerPage_Pause webdata.container.id) "Pause"
+                , buttonMdl model 5 (State.Req_Gantry_ContainerPage_UnPause webdata.container.id) "Unpause"
+                , containerTableMdl webdata.container
                 ]
 
-        Err err ->
-            textMdl <| toString err
+        RemoteData.Failure error ->
+            httpFailureMessage "fetch the container" error
 
 
 containersCreateView : Model -> Html Msg
@@ -285,13 +305,13 @@ containersCreateView model =
                     br [] []
 
                 RemoteData.Loading ->
-                    textMdl "Loading ..."
+                    httpLoadingMessage "Loading ..."
 
                 RemoteData.Success webdata ->
-                    textMdl <| toString webdata
+                    httpSuccessMessage webdata.message
 
                 RemoteData.Failure error ->
-                    textMdl <| toString error
+                    httpFailureMessage "create container" error
             , textMidMdl "Details"
             , rightButtonMdl model 0 State.Req_Gantry_ContainersPage_Create "Create"
             , br [] []
@@ -322,19 +342,16 @@ containersCreateView model =
 imagesView : Model -> Html Msg
 imagesView model =
     yellowDivMdl
-        [ (let
-            managementStatus =
-                imagesManagementWebDataString model
-           in
-            if List.length managementStatus > 0 then
-                div []
-                    [ textMdl "Management status"
-                    , listMdl managementStatus
-                    ]
-            else
-                textMdl "No management status"
-          )
-        , br [] []
-        , buttonMdl model 1 State.Req_Gantry_ImagesPage_Remove "Remove"
-        , imagesTableMdl model
+        [ case model.imagesPage.imagesWebdata of
+            RemoteData.NotAsked ->
+                textMdl "Images has not been fetched"
+
+            RemoteData.Loading ->
+                httpLoadingMessage "Loading ..."
+
+            RemoteData.Success webdata ->
+                imagesTableMdl model webdata.images
+
+            RemoteData.Failure error ->
+                httpFailureMessage "fetch images" error
         ]

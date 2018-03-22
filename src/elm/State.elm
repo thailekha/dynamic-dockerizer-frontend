@@ -20,16 +20,19 @@ import Types.Instances as Instances
 import Types.Processes as Processes
 import Types.ProgressKeys as ProgressKeys
 import Material
+import Material.Snackbar as Snackbar
+import Material.Helpers exposing (map1st, map2nd)
 import Navigation exposing (Location)
 import Pages.Router as Router
 import Set exposing (Set)
 import Debug
 import Json.Encode as Encode
-import Json.Decode exposing (Value, decodeValue, string, field)
+import Json.Decode exposing (Value, decodeValue, string, field, value)
 import Dict
 import Time exposing (Time, second)
 import FileReader exposing (NativeFile)
 import Task
+import Array
 
 
 type alias Model =
@@ -64,11 +67,11 @@ type alias Model =
     , input_Gantry_ContainersPage_Create_OpenStdin : Bool
     , input_Gantry_ContainersPage_Create_Tty : Bool
     , input_Gantry_ImagesPage : String
-    , res_Gantry_ContainersPage_Create : WebData CommonResponses.PortResponse
     , master_progressKeys : ProgressKeys.ProgressKeys
     , agent_progressKeys : ProgressKeys.ProgressKeys
     , route : Router.Route
     , mdl : Material.Model
+    , snackbar : Snackbar.Model String
     }
 
 
@@ -125,11 +128,11 @@ initModel config initialRoute =
             , input_Gantry_ContainersPage_Create_OpenStdin = True
             , input_Gantry_ContainersPage_Create_Tty = True
             , input_Gantry_ImagesPage = ""
-            , res_Gantry_ContainersPage_Create = RemoteData.NotAsked
             , master_progressKeys = ProgressKeys.init
             , agent_progressKeys = ProgressKeys.init
             , route = initialRoute
             , mdl = Material.model
+            , snackbar = Snackbar.model
             }
     in
         case config of
@@ -210,7 +213,7 @@ type Msg
     | Res_ConvertPage_Destroy String (WebData CommonResponses.StringResponse)
     | Input_Gantry_ContainersPage_ToggleAll
     | Input_Gantry_ContainersPage_Toggle Containers.Container
-    | Res_Gantry_ContainersPage_Containers Value
+    | Res_Gantry_ContainersPage_Containers (WebData Containers.Containers)
     | Req_Gantry_ContainersPage_Start
     | Req_Gantry_ContainersPage_Stop
     | Req_Gantry_ContainersPage_Pause
@@ -218,8 +221,9 @@ type Msg
     | Req_Gantry_ContainersPage_Delete
     | Req_Gantry_ContainersPage_Restart
     | Req_Gantry_ContainersPage_Create
-    | Res_Gantry_ContainersPage_Create Value
-    | Res_Gantry_ContainersPage_Management String (WebData CommonResponses.StringResponse)
+    | ReqBody_Gantry_ContainersPage_Create Value
+    | Res_Gantry_ContainersPage_Create (WebData CommonResponses.StringResponse)
+    | Res_Gantry_ContainersPage_Management String String (WebData CommonResponses.StringResponse)
     | Res_Gantry_ContainerPage_Management String (WebData CommonResponses.StringResponse)
     | Input_Gantry_ContainersPage_Create_Name String
     | Input_Gantry_ContainersPage_Create_Image String
@@ -231,7 +235,8 @@ type Msg
     | InputDelete_Gantry_ContainersPage_Create_Binds String
     | Input_Gantry_ContainersPage_Create_Privileged
     | Input_Gantry_ContainersPage_Create_ConsoleMode String
-    | Res_Gantry_ContainerPage_Get Value
+    | Unformatted_Res_Gantry_ContainerPage_Get (WebData Value)
+    | Formatted_Res_Gantry_ContainerPage_Get Value
     | Req_Gantry_ContainerPage_Start String
     | Req_Gantry_ContainerPage_Stop String
     | Req_Gantry_ContainerPage_Restart String
@@ -257,6 +262,7 @@ type Msg
     | NotSendingRequest_DeleteProgressKey String
     | OnLocationChange Location -- routing
     | Mdl (Material.Msg Msg) -- styling
+    | Snackbar (Snackbar.Msg String)
     | Tick Time
     | NoChange -- for dev
     | NoChangeText String -- for dev
@@ -403,7 +409,7 @@ update msg model =
                     model ! []
 
         Req_InstancesPage_CloneInstance ->
-            model ! [ reqProgressKey model Req_InstancesPage_PrepareForClone ]
+            model ! [ reqProgressKeyMaster model Req_InstancesPage_PrepareForClone ]
 
         Req_InstancesPage_PrepareForClone progressKeyRes ->
             case progressKeyRes of
@@ -434,77 +440,46 @@ update msg model =
                      }
                         |> resetInstancesPage
                     )
-                        ! [ reqProgressKey model Req_InstancesPage_GetInstances ]
+                        ! [ reqProgressKeyMaster model Req_InstancesPage_GetInstances ]
 
                 _ ->
                     model ! []
 
         Res_Gantry_ContainersPage_Containers response ->
-            let
-                nWebdata =
-                    (case
-                        decodeValue CommonResponses.decodePortResponse response
-                     of
-                        Ok decodedResponse ->
-                            if decodedResponse.success then
-                                (case
-                                    decodeValue Containers.decodeContainers response
-                                 of
-                                    Ok decodedContainers ->
-                                        RemoteData.succeed decodedContainers
+            { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage response } ! []
 
-                                    Err message ->
-                                        badPayloadHttp message
-                                )
-                            else
-                                badPayloadHttp decodedResponse.message
+        Unformatted_Res_Gantry_ContainerPage_Get response ->
+            case response of
+                RemoteData.Failure error ->
+                    { model
+                        | containerPage = ContainerPage.updateContainerWebdata model.containerPage <| RemoteData.mapError (error |> always) (RemoteData.Failure "")
+                    }
+                        ! []
 
-                        Err message ->
-                            badPayloadHttp message
-                    )
-            in
-                { model | containersPage = ContainersPage.updateContainersWebdata model.containersPage nWebdata } ! []
+                RemoteData.Success container ->
+                    model ! [ reformatContainerValue container ]
 
-        Res_Gantry_ContainerPage_Get response ->
-            case
-                decodeValue CommonResponses.decodePortResponse response
-            of
-                Ok decodedResponse ->
-                    if decodedResponse.success then
-                        (case
-                            decodeValue Containers.decodeContainerGet response
-                         of
-                            Ok decodedContainer ->
-                                { model
-                                    | containerPage =
-                                        RemoteData.succeed decodedContainer
-                                            |> ContainerPage.updateContainerWebdata model.containerPage
-                                }
-                                    ! []
+                _ ->
+                    model ! []
 
-                            Err message ->
-                                { model
-                                    | containerPage =
-                                        badPayloadHttp message
-                                            |> ContainerPage.updateContainerWebdata model.containerPage
-                                }
-                                    ! []
-                        )
-                    else
-                        { model
-                            | containerPage =
-                                badPayloadHttp decodedResponse.message
-                                    |> ContainerPage.updateContainerWebdata model.containerPage
-                        }
-                            ! []
-
-                Err message ->
+        Formatted_Res_Gantry_ContainerPage_Get formatted ->
+            case decodeValue Containers.decodeContainerGet formatted of
+                Ok container ->
                     { model
                         | containerPage =
-                            badPayloadHttp message
+                            RemoteData.succeed container
                                 |> ContainerPage.updateContainerWebdata model.containerPage
                     }
                         ! []
+
+                Err err ->
+                    Debug.log "Cannot decode formatted container" err
+                        |> always
+                            ({ model
+                                | containerPage = ContainerPage.updateContainerWebdata model.containerPage RemoteData.NotAsked
+                             }
+                                ! []
+                            )
 
         Res_Gantry_ImagesPage_Get response ->
             { model
@@ -513,39 +488,25 @@ update msg model =
                 ! []
 
         Req_Gantry_ImagesPage_Remove ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqImages model (reqRemoveImage model)
-            )
+            model ! [ batchReqImages model (reqRemoveImage model) ]
 
         Req_Gantry_ContainersPage_Start ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "POST" "/start"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/start" ]
 
         Req_Gantry_ContainersPage_Stop ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "POST" "/stop"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/stop" ]
 
         Req_Gantry_ContainersPage_Restart ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "POST" "/restart"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/restart" ]
 
         Req_Gantry_ContainersPage_Pause ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "POST" "/pause"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/pause" ]
 
         Req_Gantry_ContainersPage_UnPause ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "POST" "/unpause"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/unpause" ]
 
         Req_Gantry_ContainersPage_Delete ->
-            ( updateContainersPageFromSelectedContainers model
-            , batchReqContainers model <| reqContainerManagement model "DELETE" "/remove"
-            )
+            model ! [ batchReqContainers model <| reqContainerManagement model "DELETE" "/remove" ]
 
         Req_Gantry_ContainerPage_Start containerID ->
             { model
@@ -664,89 +625,115 @@ update msg model =
                         model ! []
 
         Req_Gantry_ContainersPage_Create ->
-            let
-                cloneIP =
-                    ConvertPage.tryGetCloneIP model.convertPage
-            in
-                if cloneIP /= "" then
-                    { model
-                        | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage RemoteData.Loading
-                    }
-                        ! [ reqCreateContainer <|
-                                ContainerCreater.encodeContainerCreater
-                                    (cloneIP ++ ":3001")
-                                    (LoginPage.tryGetToken model.loginPage)
-                                    model.input_Gantry_ContainersPage_Create_Name
-                                    model.input_Gantry_ContainersPage_Create_Image
-                                    model.input_Gantry_ContainersPage_Create_Bindings
-                                    model.input_Gantry_ContainersPage_Create_Binds
-                                    model.input_Gantry_ContainersPage_Create_Privileged
-                                    model.input_Gantry_ContainersPage_Create_OpenStdin
-                                    model.input_Gantry_ContainersPage_Create_Tty
-                          ]
-                else
-                    Debug.log "Error clone IP, not sending create container request" cloneIP
-                        |> always (model ! [])
+            model
+                ! [ getCreateContainerRequestBody <|
+                        ContainerCreater.encodeContainerCreater
+                            model.input_Gantry_ContainersPage_Create_Name
+                            model.input_Gantry_ContainersPage_Create_Image
+                            model.input_Gantry_ContainersPage_Create_Bindings
+                            model.input_Gantry_ContainersPage_Create_Binds
+                            model.input_Gantry_ContainersPage_Create_Privileged
+                            model.input_Gantry_ContainersPage_Create_OpenStdin
+                            model.input_Gantry_ContainersPage_Create_Tty
+                  ]
+
+        ReqBody_Gantry_ContainersPage_Create body ->
+            { model
+                | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage RemoteData.Loading
+            }
+                ! [ reqCreateContainer model body ]
 
         Res_Gantry_ContainersPage_Create response ->
+            { model
+                | containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage response
+            }
+                ! []
+
+        Res_Gantry_ContainersPage_Management operation containerID response ->
             let
-                nWebdata =
-                    (case
-                        decodeValue CommonResponses.decodePortResponse response
-                     of
-                        Ok decodedResponse ->
-                            if decodedResponse.success then
-                                RemoteData.succeed decodedResponse
-                            else
-                                badPayloadHttp decodedResponse.message
+                identifier =
+                    case (ContainersPage.tryGetContainerFromId model.containersPage containerID) of
+                        Just container ->
+                            case
+                                (container.names
+                                    |> Array.fromList
+                                    |> Array.get 0
+                                )
+                            of
+                                Just name ->
+                                    name
 
-                        Err message ->
-                            badPayloadHttp message
-                    )
+                                Nothing ->
+                                    containerID
+
+                        Nothing ->
+                            containerID
+
+                snackbarText =
+                    (String.toUpper operation) ++ " " ++ identifier
             in
-                { model
-                    | res_Gantry_ContainersPage_Create = nWebdata
-                    , containerCreatePage = ContainerCreatePage.updateContainerCreateWebdata model.containerCreatePage nWebdata
-                }
-                    ! []
+                case response of
+                    RemoteData.Success _ ->
+                        model
+                            ! [ reqContainers model ]
+                            |> addSnackbar "" snackbarText "SUCESSS"
 
-        Res_Gantry_ContainersPage_Management containerID response ->
-            let
-                token =
-                    LoginPage.tryGetToken model.loginPage
+                    RemoteData.Failure err ->
+                        Debug.log "Container management task failed" err
+                            |> always
+                                (model
+                                    ! []
+                                    |> addSnackbar "" snackbarText "FAILURE"
+                                )
 
-                cloneIP =
-                    ConvertPage.tryGetCloneIP model.convertPage
-            in
-                if token /= "" && cloneIP /= "" then
-                    { model
-                        | containersPage = ContainersPage.updateContainersManagementWebData model.containersPage containerID response
-                    }
-                        ! [ cmdForStringResponse (reqContainers <| getContainersQuery token cloneIP) response ]
-                else
-                    model ! []
+                    _ ->
+                        model ! []
 
         Res_Gantry_ContainerPage_Management containerID response ->
-            let
-                token =
-                    LoginPage.tryGetToken model.loginPage
-
-                cloneIP =
-                    ConvertPage.tryGetCloneIP model.convertPage
-            in
-                if token /= "" && cloneIP /= "" then
-                    { model
-                        | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage response
-                    }
-                        ! [ reqContainer <| getContainerQuery token cloneIP containerID ]
-                else
-                    model ! []
+            { model
+                | containerPage = ContainerPage.updateContainerManagementWebData model.containerPage response
+            }
+                ! [ reqContainer model containerID ]
 
         Res_Gantry_ImagesPage_Remove imageID response ->
-            { model
-                | imagesPage = ImagesPage.updateImagesManagementWebData model.imagesPage imageID response
-            }
-                ! [ cmdForStringResponse (reqImages model) response ]
+            let
+                identifier =
+                    case (ImagesPage.tryGetImageFromId model.imagesPage imageID) of
+                        Just image ->
+                            case
+                                (image.repoTags
+                                    |> Array.fromList
+                                    |> Array.get 0
+                                )
+                            of
+                                Just name ->
+                                    name
+
+                                Nothing ->
+                                    imageID
+
+                        Nothing ->
+                            imageID
+
+                snackbarText =
+                    "REMOVE" ++ " " ++ identifier
+            in
+                case response of
+                    RemoteData.Success _ ->
+                        model
+                            ! [ reqImages model ]
+                            |> addSnackbar "" snackbarText "SUCESSS"
+
+                    RemoteData.Failure err ->
+                        Debug.log "Failed to remove image" err
+                            |> always
+                                (model
+                                    ! []
+                                    |> addSnackbar "" snackbarText "FAILURE"
+                                )
+
+                    _ ->
+                        model ! []
 
         Input_ConvertPage_SetCloneManually ->
             { model | input_ConvertPage_SetCloneManually = not model.input_ConvertPage_SetCloneManually } ! []
@@ -783,7 +770,7 @@ update msg model =
                 ! []
 
         ConvertPage_Destroy ->
-            model ! [ reqProgressKey model Req_ConvertPage_Destroy ]
+            model ! [ reqProgressKeyMaster model Req_ConvertPage_Destroy ]
 
         Req_ConvertPage_Destroy progressKeyResponse ->
             case progressKeyResponse of
@@ -831,7 +818,7 @@ update msg model =
                 ! []
 
         Req_GetProgressKey_Then_GetClone ->
-            model ! [ reqProgressKey model Req_GetClone ]
+            model ! [ reqProgressKeyMaster model Req_GetClone ]
 
         Req_GetClone progressKeyResponse ->
             case progressKeyResponse of
@@ -896,7 +883,7 @@ update msg model =
             (updateConvertPageFromSelectedProcesses model)
                 ! (model.input_ConvertPage_SelectedProcesses
                     |> Set.toList
-                    |> List.map (\pid -> reqProgressKey model (Req_DoConvertProcesses pid))
+                    |> List.map (\pid -> reqProgressKeyAgent model (Req_DoConvertProcesses pid))
                   )
 
         Req_DoConvertProcesses pid progressKeyResponse ->
@@ -911,11 +898,26 @@ update msg model =
                     model ! []
 
         Res_ConvertProcess progressKey pid response ->
-            { model
-                | convertPage = ConvertPage.updateProcessesConvertWebdata model.convertPage pid response
-                , agent_progressKeys = Dict.remove progressKey model.agent_progressKeys
-            }
-                ! []
+            let
+                updatedModel =
+                    { model
+                        | convertPage = ConvertPage.updateProcessesConvertWebdata model.convertPage pid response
+                        , agent_progressKeys = Dict.remove progressKey model.agent_progressKeys
+                    }
+            in
+                case response of
+                    RemoteData.Success _ ->
+                        updatedModel
+                            ! [ reqGetProcesses model ]
+                            |> addSnackbar "" ("CONVERT pid " ++ pid ++ " to Docker image") "SUCCESSS"
+
+                    RemoteData.Failure _ ->
+                        updatedModel
+                            ! []
+                            |> addSnackbar "" ("CONVERT pid " ++ pid ++ " to Docker image") "FAILURE"
+
+                    _ ->
+                        updatedModel ! []
 
         Res_Master_ProgressStatus progressKey response ->
             case response of
@@ -956,6 +958,11 @@ update msg model =
         Mdl msg_ ->
             Material.update Mdl msg_ model
 
+        Snackbar msg_ ->
+            Snackbar.update msg_ model.snackbar
+                |> map1st (\s -> { model | snackbar = s })
+                |> map2nd (Cmd.map Snackbar)
+
         Tick _ ->
             Debug.log "progress keys" (toString [ model.master_progressKeys, model.agent_progressKeys ])
                 |> always
@@ -990,42 +997,142 @@ port saveEc2Url : String -> Cmd msg
 port saveEc2Region : String -> Cmd msg
 
 
-port reqContainers : Value -> Cmd msg
+port reformatContainerValue : Value -> Cmd msg
 
 
-port onContainersResponse : (Value -> msg) -> Sub msg
+port formatedContainerValue : (Value -> msg) -> Sub msg
 
 
-port reqContainer : Value -> Cmd msg
+port getCreateContainerRequestBody : Value -> Cmd msg
 
 
-port onContainerResponse : (Value -> msg) -> Sub msg
-
-
-port reqCreateContainer : Value -> Cmd msg
-
-
-port onCreateContainerResponse : (Value -> msg) -> Sub msg
-
-
-badPayloadHttp : String -> RemoteData.RemoteData Http.Error a
-badPayloadHttp body =
-    RemoteData.mapError
-        (Http.Response "" { code = -1, message = "" } Dict.empty body
-            |> Http.BadPayload "Cannot decode payload from port"
-            |> always
-        )
-        (RemoteData.Failure "")
+port createContainerRequestBody : (Value -> msg) -> Sub msg
 
 
 subscriptions : a -> Sub Msg
 subscriptions model =
     Sub.batch
-        [ onContainersResponse Res_Gantry_ContainersPage_Containers
-        , onCreateContainerResponse Res_Gantry_ContainersPage_Create
-        , onContainerResponse Res_Gantry_ContainerPage_Get
+        [ createContainerRequestBody ReqBody_Gantry_ContainersPage_Create
+        , formatedContainerValue Formatted_Res_Gantry_ContainerPage_Get
         , Time.every second Tick
         ]
+
+
+allNonemptyStrings : List String -> Bool
+allNonemptyStrings strings =
+    strings
+        |> List.filter (\s -> s == "")
+        |> List.length
+        |> (==) 0
+
+
+allContainersSelected : Model -> Bool
+allContainersSelected model =
+    Set.size model.input_Gantry_ContainersPage_SelectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
+
+
+allImagesSelected : Model -> Bool
+allImagesSelected model =
+    Set.size model.input_Gantry_ImagesPage_SelectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
+
+
+allProcessesSelected : Model -> Bool
+allProcessesSelected model =
+    Set.size model.input_ConvertPage_SelectedProcesses == (List.length <| ConvertPage.tryGetProcesses model.convertPage)
+
+
+reqProgressKeyMaster : Model -> (WebData ProgressKeys.ProgressKey -> Msg) -> Cmd Msg
+reqProgressKeyMaster model cb =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+    in
+        if token /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/progress/generate"
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressKey
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map cb
+        else
+            Cmd.none
+
+
+reqProgressKeyAgent : Model -> (WebData ProgressKeys.ProgressKey -> Msg) -> Cmd Msg
+reqProgressKeyAgent model cb =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":8081" ++ "/progress/generate"
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressKey
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map cb
+        else
+            Cmd.none
+
+
+reqProgressStatusMaster : Model -> String -> Cmd Msg
+reqProgressStatusMaster model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+    in
+        if token /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = "http://localhost:8083/progress/status/" ++ progressKey
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Master_ProgressStatus progressKey)
+        else
+            deleteProgressKeyInCaseOfError progressKey
+
+
+reqProgressStatusAgent : Model -> String -> Cmd Msg
+reqProgressStatusAgent model progressKey =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":8081" ++ "/progress/status/" ++ progressKey
+                , body = Http.emptyBody
+                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Agent_ProgressStatus progressKey)
+        else
+            deleteProgressKeyInCaseOfError progressKey
 
 
 reqLogin : Model -> Cmd Msg
@@ -1073,10 +1180,6 @@ reqUpdateAWSConfig model =
                 |> Cmd.map Res_HomePage_UpdateAWSConfig
         else
             Cmd.none
-
-
-
--- regions
 
 
 reqRegions : Model -> Cmd Msg
@@ -1138,10 +1241,6 @@ reqCreateWorkspace model =
                 |> always Cmd.none
 
 
-
--- Instances
-
-
 reqInstances : Model -> String -> Cmd Msg
 reqInstances model progressKey =
     let
@@ -1166,79 +1265,6 @@ reqInstances model progressKey =
                 }
                 |> RemoteData.sendRequest
                 |> Cmd.map (Res_InstancesPage_GetInstances progressKey)
-        else
-            deleteProgressKeyInCaseOfError progressKey
-
-
-
--- Clone
-
-
-reqProgressKey : Model -> (WebData ProgressKeys.ProgressKey -> Msg) -> Cmd Msg
-reqProgressKey model cb =
-    let
-        token =
-            LoginPage.tryGetToken model.loginPage
-    in
-        if token /= "" then
-            Http.request
-                { method = "GET"
-                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = "http://localhost:8083/progress/generate"
-                , body = Http.emptyBody
-                , expect = Http.expectJson ProgressKeys.decodeProgressKey
-                , timeout = Nothing
-                , withCredentials = False
-                }
-                |> RemoteData.sendRequest
-                |> Cmd.map cb
-        else
-            Cmd.none
-
-
-reqProgressStatusMaster : Model -> String -> Cmd Msg
-reqProgressStatusMaster model progressKey =
-    let
-        token =
-            LoginPage.tryGetToken model.loginPage
-    in
-        if token /= "" then
-            Http.request
-                { method = "GET"
-                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = "http://localhost:8083/progress/status/" ++ progressKey
-                , body = Http.emptyBody
-                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
-                , timeout = Nothing
-                , withCredentials = False
-                }
-                |> RemoteData.sendRequest
-                |> Cmd.map (Res_Master_ProgressStatus progressKey)
-        else
-            deleteProgressKeyInCaseOfError progressKey
-
-
-reqProgressStatusAgent : Model -> String -> Cmd Msg
-reqProgressStatusAgent model progressKey =
-    let
-        token =
-            LoginPage.tryGetToken model.loginPage
-
-        cloneIP =
-            ConvertPage.tryGetCloneIP model.convertPage
-    in
-        if token /= "" && cloneIP /= "" then
-            Http.request
-                { method = "GET"
-                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = cloneIP ++ ":8081" ++ "/progress/status/" ++ progressKey
-                , body = Http.emptyBody
-                , expect = Http.expectJson ProgressKeys.decodeProgressStatus
-                , timeout = Nothing
-                , withCredentials = False
-                }
-                |> RemoteData.sendRequest
-                |> Cmd.map (Res_Agent_ProgressStatus progressKey)
         else
             deleteProgressKeyInCaseOfError progressKey
 
@@ -1269,14 +1295,6 @@ reqGetImportedAndCloned model progressKey cb =
                 |> Cmd.map cb
         else
             deleteProgressKeyInCaseOfError progressKey
-
-
-allNonemptyStrings : List String -> Bool
-allNonemptyStrings strings =
-    strings
-        |> List.filter (\s -> s == "")
-        |> List.length
-        |> (==) 0
 
 
 reqPrepareForClone : Model -> (WebData CommonResponses.StringResponse -> Msg) -> Cmd Msg -> Cmd Msg
@@ -1484,8 +1502,79 @@ reqConvertProcess model progressKey pid =
             deleteProgressKeyInCaseOfError progressKey
 
 
+reqContainers : Model -> Cmd Msg
+reqContainers model =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
 
--- Containers
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/containers/all"
+                , body = Http.emptyBody
+                , expect = Http.expectJson Containers.decodeContainers
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_Gantry_ContainersPage_Containers
+        else
+            Cmd.none
+
+
+reqContainer : Model -> String -> Cmd Msg
+reqContainer model containerID =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "GET"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/containers/" ++ containerID
+                , body = Http.emptyBody
+                , expect = Http.expectJson value
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Unformatted_Res_Gantry_ContainerPage_Get
+        else
+            Cmd.none
+
+
+reqCreateContainer : Model -> Value -> Cmd Msg
+reqCreateContainer model body =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+    in
+        if token /= "" && cloneIP /= "" then
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/containers/create"
+                , body = Http.jsonBody body
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map Res_Gantry_ContainersPage_Create
+        else
+            Cmd.none
 
 
 reqContainerManagement : Model -> String -> String -> String -> Cmd Msg
@@ -1508,7 +1597,7 @@ reqContainerManagement model verb suffix containerID =
                 , withCredentials = False
                 }
                 |> RemoteData.sendRequest
-                |> Cmd.map (Res_Gantry_ContainersPage_Management containerID)
+                |> Cmd.map (Res_Gantry_ContainersPage_Management suffix containerID)
         else
             Cmd.none
 
@@ -1536,10 +1625,6 @@ reqContainerManagement2 model verb suffix containerID =
                 |> Cmd.map (Res_Gantry_ContainerPage_Management containerID)
         else
             Cmd.none
-
-
-
--- Image
 
 
 reqImages : Model -> Cmd Msg
@@ -1592,36 +1677,9 @@ reqRemoveImage model imageID =
             Cmd.none
 
 
-allContainersSelected : Model -> Bool
-allContainersSelected model =
-    Set.size model.input_Gantry_ContainersPage_SelectedContainers == (List.length <| ContainersPage.tryGetContainers model.containersPage)
-
-
-allImagesSelected : Model -> Bool
-allImagesSelected model =
-    Set.size model.input_Gantry_ImagesPage_SelectedImages == (List.length <| ImagesPage.tryGetImages model.imagesPage)
-
-
-allProcessesSelected : Model -> Bool
-allProcessesSelected model =
-    Set.size model.input_ConvertPage_SelectedProcesses == (List.length <| ConvertPage.tryGetProcesses model.convertPage)
-
-
-containersPageFolder : String -> ContainersPage.Model -> ContainersPage.Model
-containersPageFolder containerID nContainersPage =
-    ContainersPage.updateContainersManagementWebData nContainersPage containerID RemoteData.Loading
-
-
 convertPageFolder : String -> ConvertPage.Model -> ConvertPage.Model
 convertPageFolder pid nConvertPage =
     ConvertPage.updateProcessesConvertWebdata nConvertPage pid RemoteData.Loading
-
-
-updateContainersPageFromSelectedContainers : Model -> Model
-updateContainersPageFromSelectedContainers model =
-    { model
-        | containersPage = List.foldr containersPageFolder model.containersPage <| Set.toList model.input_Gantry_ContainersPage_SelectedContainers
-    }
 
 
 updateConvertPageFromSelectedProcesses : Model -> Model
@@ -1629,11 +1687,6 @@ updateConvertPageFromSelectedProcesses model =
     { model
         | convertPage = List.foldr convertPageFolder model.convertPage <| Set.toList model.input_ConvertPage_SelectedProcesses
     }
-
-
-imagesPageFolder : String -> ImagesPage.Model -> ImagesPage.Model
-imagesPageFolder imageID nImagesPage =
-    ImagesPage.updateImagesManagementWebData nImagesPage imageID RemoteData.Loading
 
 
 batchReqContainers : Model -> (String -> Cmd Msg) -> Cmd Msg
@@ -1646,37 +1699,19 @@ batchReqImages model reqCb =
     Cmd.batch <| List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
 
 
-cmdForStringResponse : Cmd Msg -> WebData CommonResponses.StringResponse -> Cmd Msg
-cmdForStringResponse cb response =
-    case response of
-        RemoteData.Success _ ->
-            cb
-
-        _ ->
-            Cmd.none
-
-
-getContainersQuery : String -> String -> Value
-getContainersQuery token cloneIP =
-    Encode.object
-        [ ( "url", Encode.string (cloneIP ++ ":3001") )
-        , ( "token", Encode.string token )
-        ]
-
-
-getContainerQuery : String -> String -> String -> Value
-getContainerQuery token cloneIP containerID =
-    Encode.object
-        [ ( "url", Encode.string (cloneIP ++ ":3001") )
-        , ( "token", Encode.string token )
-        , ( "containerID", Encode.string containerID )
-        ]
-
-
 deleteProgressKeyInCaseOfError : String -> Cmd Msg
 deleteProgressKeyInCaseOfError key =
     -- This won't work: Cmd.map (always <| NotSendingRequest_DeleteProgressKey key) Cmd.none
     Task.perform (always <| NotSendingRequest_DeleteProgressKey key) (Task.succeed "")
+
+
+addSnackbar : String -> String -> String -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+addSnackbar payload message label ( model, mainEffect ) =
+    let
+        ( snackbar_, effect ) =
+            Snackbar.add (Snackbar.snackbar payload message label) model.snackbar
+    in
+        { model | snackbar = snackbar_ } ! [ mainEffect, Cmd.map Snackbar effect ]
 
 
 
@@ -1700,7 +1735,7 @@ sendRequestsBasedOnRoute model newRoute =
 
                     Router.CloneRoute ->
                         if model.selectedRegion /= "" then
-                            model ! [ reqProgressKey model Req_InstancesPage_GetInstances ]
+                            model ! [ reqProgressKeyMaster model Req_InstancesPage_GetInstances ]
                         else
                             model ! []
 
@@ -1714,19 +1749,19 @@ sendRequestsBasedOnRoute model newRoute =
 
                     Router.ConvertProcessViewRoute pid ->
                         if token /= "" && cloneIP /= "" then
-                            model ! [ reqProgressKey model (Req_ConvertPage_GetProcessMetadata pid) ]
+                            model ! [ reqProgressKeyAgent model (Req_ConvertPage_GetProcessMetadata pid) ]
                         else
                             model ! []
 
                     Router.GantryContainersViewRoute ->
                         if token /= "" && cloneIP /= "" then
-                            model ! [ reqContainers <| getContainersQuery token cloneIP ]
+                            model ! [ reqContainers model ]
                         else
                             model ! []
 
                     Router.GantryContainerViewRoute containerID ->
                         if token /= "" && cloneIP /= "" then
-                            model ! [ reqContainer <| getContainerQuery token cloneIP containerID ]
+                            model ! [ reqContainer model containerID ]
                         else
                             model ! []
 
