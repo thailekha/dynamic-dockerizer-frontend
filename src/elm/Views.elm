@@ -350,7 +350,11 @@ imagesView model =
                 httpLoadingMessage "Loading ..."
 
             RemoteData.Success webdata ->
-                imagesTableMdl model webdata.images
+                div []
+                    [ dockerCredentialsDialog model
+                    , br [] []
+                    , imagesTableMdl model webdata.images
+                    ]
 
             RemoteData.Failure error ->
                 httpFailureMessage "fetch images" error

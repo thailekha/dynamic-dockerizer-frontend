@@ -19,6 +19,7 @@ import Types.Images as Images
 import Types.Instances as Instances
 import Types.Processes as Processes
 import Types.ProgressKeys as ProgressKeys
+import Types.DockerCreds as DockerCreds
 import Material
 import Material.Snackbar as Snackbar
 import Material.Helpers exposing (map1st, map2nd)
@@ -56,6 +57,9 @@ type alias Model =
     , input_LoginPage_AccessKeyId : String
     , input_LoginPage_SecretAccessKey : String
     , input_Gantry_ContainersPage_SelectedContainers : Set String
+    , input_Gantry_ImagesPage_DockerUsername : String
+    , input_Gantry_ImagesPage_DockerPassword : String
+    , input_Gantry_ImagesPage_DockerCreds : DockerCreds.DockerCreds
     , input_Gantry_ImagesPage_SelectedImages : Set String
     , input_Gantry_ContainersPage_Create_Name : String
     , input_Gantry_ContainersPage_Create_Image : String
@@ -75,21 +79,36 @@ type alias Model =
     }
 
 
-resetInstancesPage : Model -> Model
-resetInstancesPage model =
+
+-- reset all inputs except for selectedRegion, input_Gantry_ImagesPage_DockerCreds
+
+
+resetInputs : Model -> Model
+resetInputs model =
     { model
         | input_InstancesPage_Keyfile = Nothing
         , input_InstancesPage_KeypairName = ""
         , input_InstancesPage_SelectedInstance = ""
-    }
-
-
-resetConvertPage : Model -> Model
-resetConvertPage model =
-    { model
-        | input_ConvertPage_SetCloneManually = False
+        , input_ConvertPage_SetCloneManually = False
         , input_ConvertPage_Ec2Url = ""
         , input_ConvertPage_SelectedProcesses = Set.empty
+        , input_LoginPage_UserName = ""
+        , input_LoginPage_AccessKeyId = ""
+        , input_LoginPage_SecretAccessKey = ""
+        , input_Gantry_ContainersPage_SelectedContainers = Set.empty
+        , input_Gantry_ImagesPage_DockerUsername = ""
+        , input_Gantry_ImagesPage_DockerPassword = ""
+        , input_Gantry_ImagesPage_SelectedImages = Set.empty
+        , input_Gantry_ContainersPage_Create_Name = ""
+        , input_Gantry_ContainersPage_Create_Image = ""
+        , input_Gantry_ContainersPage_Create_Container_Port = ""
+        , input_Gantry_ContainersPage_Create_Host_Port = ""
+        , input_Gantry_ContainersPage_Create_Bindings = []
+        , input_Gantry_ContainersPage_Create_Binds = []
+        , input_Gantry_ContainersPage_Create_Privileged = False
+        , input_Gantry_ContainersPage_Create_OpenStdin = True
+        , input_Gantry_ContainersPage_Create_Tty = True
+        , input_Gantry_ImagesPage = ""
     }
 
 
@@ -117,6 +136,9 @@ initModel config initialRoute =
             , input_LoginPage_AccessKeyId = ""
             , input_LoginPage_SecretAccessKey = ""
             , input_Gantry_ContainersPage_SelectedContainers = Set.empty
+            , input_Gantry_ImagesPage_DockerUsername = ""
+            , input_Gantry_ImagesPage_DockerPassword = ""
+            , input_Gantry_ImagesPage_DockerCreds = DockerCreds.init
             , input_Gantry_ImagesPage_SelectedImages = Set.empty
             , input_Gantry_ContainersPage_Create_Name = ""
             , input_Gantry_ContainersPage_Create_Image = ""
@@ -156,10 +178,20 @@ initModel config initialRoute =
                                 Debug.log "Cannot decode ec2Region from config" config
                                     |> always "eu-west-1"
 
+                    dockerCreds_ =
+                        case (decodeValue (field "dockerCreds" DockerCreds.decode) initialData) of
+                            Ok dockerCreds ->
+                                dockerCreds
+
+                            Err _ ->
+                                Debug.log "Cannot decode dockerCreds from config" config
+                                    |> always DockerCreds.init
+
                     updatedModel =
                         { defaultModel
                             | convertPage = updatedConvertPage
                             , selectedRegion = ec2Region_
+                            , input_Gantry_ImagesPage_DockerCreds = dockerCreds_
                         }
                 in
                     updatedModel ! [ reqCloneCheckHost updatedModel ]
@@ -242,11 +274,16 @@ type Msg
     | Req_Gantry_ContainerPage_Restart String
     | Req_Gantry_ContainerPage_Pause String
     | Req_Gantry_ContainerPage_UnPause String
+    | Input_Gantry_ImagesPage_DockerUsername String
+    | Input_Gantry_ImagesPage_DockerPassword String
+    | Input_Gantry_ImagesPage_DockerCreds
     | Res_Gantry_ImagesPage_Get (WebData Images.Images)
     | Input_Gantry_ImagesPage_ToggleAll
     | Input_Gantry_ImagesPage_Toggle Images.Image
     | Req_Gantry_ImagesPage_Remove
     | Res_Gantry_ImagesPage_Remove String (WebData CommonResponses.StringResponse)
+    | Req_Gantry_ImagesPage_Push
+    | Res_Gantry_ImagesPage_Push String (WebData CommonResponses.StringResponse)
     | Ec2_URL_Set
     | Req_GetProgressKey_Then_GetClone
     | Req_GetClone (WebData ProgressKeys.ProgressKey)
@@ -438,7 +475,7 @@ update msg model =
                         | instancesPage = InstancesPage.updateCloneWebdata model.instancesPage response
                         , master_progressKeys = Dict.remove progressKey model.master_progressKeys
                      }
-                        |> resetInstancesPage
+                        |> resetInputs
                     )
                         ! [ reqProgressKeyMaster model Req_InstancesPage_GetInstances ]
 
@@ -481,6 +518,24 @@ update msg model =
                                 ! []
                             )
 
+        Input_Gantry_ImagesPage_DockerUsername s ->
+            { model | input_Gantry_ImagesPage_DockerUsername = s } ! []
+
+        Input_Gantry_ImagesPage_DockerPassword s ->
+            { model | input_Gantry_ImagesPage_DockerPassword = s } ! []
+
+        Input_Gantry_ImagesPage_DockerCreds ->
+            let
+                dockerCreds =
+                    { username = model.input_Gantry_ImagesPage_DockerUsername
+                    , password = model.input_Gantry_ImagesPage_DockerPassword
+                    }
+            in
+                { model
+                    | input_Gantry_ImagesPage_DockerCreds = dockerCreds
+                }
+                    ! [ saveDockerCreds dockerCreds ]
+
         Res_Gantry_ImagesPage_Get response ->
             { model
                 | imagesPage = ImagesPage.updateImagesWebdata model.imagesPage response
@@ -488,7 +543,21 @@ update msg model =
                 ! []
 
         Req_Gantry_ImagesPage_Remove ->
-            model ! [ batchReqImages model (reqRemoveImage model) ]
+            let 
+                (snackbarModel, snackbarCmd) = addSnackbarCmd "" "Removing image(s)" "" model
+
+                nModel = {model | snackbar = snackbarModel}
+            in
+                batchReqImages (nModel, snackbarCmd) (reqRemoveImage nModel)
+
+        Req_Gantry_ImagesPage_Push ->
+            let
+                (snackbarModel, snackbarCmd) = addSnackbarCmd "" "Pushing image(s)" "" model
+
+                nModel = {model | snackbar = snackbarModel}
+
+            in
+                batchReqImages (nModel, snackbarCmd) (reqPushImage nModel)
 
         Req_Gantry_ContainersPage_Start ->
             model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/start" ]
@@ -651,26 +720,8 @@ update msg model =
 
         Res_Gantry_ContainersPage_Management operation containerID response ->
             let
-                identifier =
-                    case (ContainersPage.tryGetContainerFromId model.containersPage containerID) of
-                        Just container ->
-                            case
-                                (container.names
-                                    |> Array.fromList
-                                    |> Array.get 0
-                                )
-                            of
-                                Just name ->
-                                    name
-
-                                Nothing ->
-                                    containerID
-
-                        Nothing ->
-                            containerID
-
                 snackbarText =
-                    (String.toUpper operation) ++ " " ++ identifier
+                    (String.toUpper operation) ++ " " ++ ContainersPage.tryGetContainerIdentifierFromId model.containersPage containerID
             in
                 case response of
                     RemoteData.Success _ ->
@@ -697,26 +748,8 @@ update msg model =
 
         Res_Gantry_ImagesPage_Remove imageID response ->
             let
-                identifier =
-                    case (ImagesPage.tryGetImageFromId model.imagesPage imageID) of
-                        Just image ->
-                            case
-                                (image.repoTags
-                                    |> Array.fromList
-                                    |> Array.get 0
-                                )
-                            of
-                                Just name ->
-                                    name
-
-                                Nothing ->
-                                    imageID
-
-                        Nothing ->
-                            imageID
-
                 snackbarText =
-                    "REMOVE" ++ " " ++ identifier
+                    "REMOVE" ++ " " ++ ImagesPage.tryGetImageIdentifierFromId model.imagesPage imageID
             in
                 case response of
                     RemoteData.Success _ ->
@@ -726,6 +759,28 @@ update msg model =
 
                     RemoteData.Failure err ->
                         Debug.log "Failed to remove image" err
+                            |> always
+                                (model
+                                    ! []
+                                    |> addSnackbar "" snackbarText "FAILURE"
+                                )
+
+                    _ ->
+                        model ! []
+
+        Res_Gantry_ImagesPage_Push imageID response ->
+            let
+                snackbarText =
+                    "PUSH" ++ " " ++ ImagesPage.tryGetImageIdentifierFromId model.imagesPage imageID
+            in
+                case response of
+                    RemoteData.Success _ ->
+                        model
+                            ! []
+                            |> addSnackbar "" snackbarText "SUCESSS"
+
+                    RemoteData.Failure err ->
+                        Debug.log "Failed to push image" err
                             |> always
                                 (model
                                     ! []
@@ -995,6 +1050,9 @@ port saveEc2Url : String -> Cmd msg
 
 
 port saveEc2Region : String -> Cmd msg
+
+
+port saveDockerCreds : DockerCreds.DockerCreds -> Cmd msg
 
 
 port reformatContainerValue : Value -> Cmd msg
@@ -1677,6 +1735,37 @@ reqRemoveImage model imageID =
             Cmd.none
 
 
+reqPushImage : Model -> String -> Cmd Msg
+reqPushImage model imageID =
+    let
+        token =
+            LoginPage.tryGetToken model.loginPage
+
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+
+        dockerUsername =
+            model.input_Gantry_ImagesPage_DockerCreds.username
+
+        dockerPassword =
+            model.input_Gantry_ImagesPage_DockerCreds.password
+    in
+        if allNonemptyStrings [ token, cloneIP, dockerUsername, dockerPassword ] then
+            Http.request
+                { method = "POST"
+                , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
+                , url = cloneIP ++ ":3001" ++ "/api/images/push/" ++ imageID
+                , body = Http.jsonBody <| Encode.object [ ( "username", Encode.string dockerUsername ), ( "password", Encode.string dockerPassword ) ]
+                , expect = Http.expectJson CommonResponses.decodeStringResponse
+                , timeout = Nothing
+                , withCredentials = False
+                }
+                |> RemoteData.sendRequest
+                |> Cmd.map (Res_Gantry_ImagesPage_Push imageID)
+        else
+            Cmd.none
+
+
 convertPageFolder : String -> ConvertPage.Model -> ConvertPage.Model
 convertPageFolder pid nConvertPage =
     ConvertPage.updateProcessesConvertWebdata nConvertPage pid RemoteData.Loading
@@ -1694,9 +1783,36 @@ batchReqContainers model reqCb =
     Cmd.batch <| List.map (\containerID -> reqCb containerID) <| Set.toList model.input_Gantry_ContainersPage_SelectedContainers
 
 
-batchReqImages : Model -> (String -> Cmd Msg) -> Cmd Msg
-batchReqImages model reqCb =
-    Cmd.batch <| List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
+batchReqImages : (Model, Cmd Msg) -> (String -> Cmd Msg) -> (Model, Cmd Msg)
+batchReqImages (model, initialSnackbarCmd) reqCb =
+    let 
+        cloneIP =
+            ConvertPage.tryGetCloneIP model.convertPage
+
+        dockerUsername =
+            model.input_Gantry_ImagesPage_DockerCreds.username
+
+        dockerPassword =
+            model.input_Gantry_ImagesPage_DockerCreds.password
+
+        cmds = List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
+
+        (nModel, snackbarCmd) =
+            if List.member Cmd.none cmds then
+                if not (allNonemptyStrings [ cloneIP ]) then
+                    model ! [initialSnackbarCmd]
+                        |> addSnackbar "" "Invalid clone's IP" "FAILURE"
+                else if not (allNonemptyStrings [ dockerUsername, dockerPassword ]) then
+                    model ! [initialSnackbarCmd]
+                        |> addSnackbar "" "Invalid Docker credentials" "FAILURE"
+                else
+                    model ! [initialSnackbarCmd]
+                        |> addSnackbar "" "Error" "FAILURE"
+            else
+                model ! [initialSnackbarCmd]
+
+    in 
+        nModel ! (snackbarCmd :: cmds)
 
 
 deleteProgressKeyInCaseOfError : String -> Cmd Msg
@@ -1714,66 +1830,79 @@ addSnackbar payload message label ( model, mainEffect ) =
         { model | snackbar = snackbar_ } ! [ mainEffect, Cmd.map Snackbar effect ]
 
 
+addSnackbarCmd : String -> String -> String -> Model -> ( Snackbar.Model String, Cmd Msg )
+addSnackbarCmd payload message label model =
+    let
+        ( snackbar_, effect ) =
+            Snackbar.add (Snackbar.snackbar payload message label) model.snackbar
+    in
+        (snackbar_, Cmd.map Snackbar effect)
+
+
 
 -- NOTE: only set RemoteData to Loading when you have the progressKey response, because the subsequent request might not fire and RemoteData is stuck at loading
 
 
 sendRequestsBasedOnRoute : Model -> Router.Route -> ( Model, Cmd Msg )
 sendRequestsBasedOnRoute model newRoute =
-    case model.loginPage.authenticationState of
-        Auth.LoggedIn _ ->
-            let
-                token =
-                    LoginPage.tryGetToken model.loginPage
+    let
+        nModel =
+            resetInputs model
+    in
+        case model.loginPage.authenticationState of
+            Auth.LoggedIn _ ->
+                let
+                    token =
+                        LoginPage.tryGetToken nModel.loginPage
 
-                cloneIP =
-                    ConvertPage.tryGetCloneIP model.convertPage
-            in
-                (case newRoute of
-                    Router.LandingRoute ->
-                        { model | homePage = HomePage.updateRegionswebdata model.homePage RemoteData.Loading } ! [ reqRegions model ]
+                    cloneIP =
+                        ConvertPage.tryGetCloneIP nModel.convertPage
+                in
+                    (case newRoute of
+                        Router.LandingRoute ->
+                            { nModel | homePage = HomePage.updateRegionswebdata nModel.homePage RemoteData.Loading } ! [ reqRegions nModel ]
 
-                    Router.CloneRoute ->
-                        if model.selectedRegion /= "" then
-                            model ! [ reqProgressKeyMaster model Req_InstancesPage_GetInstances ]
-                        else
-                            model ! []
+                        Router.CloneRoute ->
+                            if nModel.selectedRegion /= "" then
+                                nModel ! [ reqProgressKeyMaster nModel Req_InstancesPage_GetInstances ]
+                            else
+                                nModel ! []
 
-                    Router.ConvertProcessesViewRoute ->
-                        case model.convertPage.cloneWebdata of
-                            RemoteData.Success _ ->
-                                model ! [ reqGetProcesses model ]
+                        Router.ConvertProcessesViewRoute ->
+                            case nModel.convertPage.cloneWebdata of
+                                RemoteData.Success _ ->
+                                    nModel ! [ reqGetProcesses nModel ]
 
-                            _ ->
-                                model ! []
+                                _ ->
+                                    nModel ! []
 
-                    Router.ConvertProcessViewRoute pid ->
-                        if token /= "" && cloneIP /= "" then
-                            model ! [ reqProgressKeyAgent model (Req_ConvertPage_GetProcessMetadata pid) ]
-                        else
-                            model ! []
+                        Router.ConvertProcessViewRoute pid ->
+                            if token /= "" && cloneIP /= "" then
+                                nModel ! [ reqProgressKeyAgent nModel (Req_ConvertPage_GetProcessMetadata pid) ]
+                            else
+                                nModel ! []
 
-                    Router.GantryContainersViewRoute ->
-                        if token /= "" && cloneIP /= "" then
-                            model ! [ reqContainers model ]
-                        else
-                            model ! []
+                        Router.GantryContainersViewRoute ->
+                            if token /= "" && cloneIP /= "" then
+                                nModel ! [ reqContainers nModel ]
+                            else
+                                nModel ! []
 
-                    Router.GantryContainerViewRoute containerID ->
-                        if token /= "" && cloneIP /= "" then
-                            model ! [ reqContainer model containerID ]
-                        else
-                            model ! []
+                        Router.GantryContainerViewRoute containerID ->
+                            if token /= "" && cloneIP /= "" then
+                                nModel ! [ reqContainer nModel containerID ]
+                            else
+                                nModel ! []
 
-                    Router.GantryContainersCreateRoute ->
-                        model ! [ reqImages model ]
+                        Router.GantryContainersCreateRoute ->
+                            nModel ! [ reqImages nModel ]
 
-                    Router.GantryImageRoute ->
-                        model ! [ reqImages model ]
+                        Router.GantryImageRoute ->
+                            nModel ! [ reqImages nModel ]
 
-                    _ ->
-                        model ! []
-                )
+                        _ ->
+                            nModel ! []
+                    )
 
-        Auth.LoggedOut ->
-            model ! []
+            Auth.LoggedOut ->
+                nModel ! []

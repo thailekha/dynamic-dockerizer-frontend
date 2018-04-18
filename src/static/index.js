@@ -13,6 +13,8 @@ function resetLocalStorage() {
   localStorage.removeItem('token');
   localStorage.removeItem('ec2Url');
   localStorage.removeItem('ec2Region');
+  localStorage.removeItem('dockerCredsUsername');
+  localStorage.removeItem('dockerCredsPassword');
 }
 
 function getStoredAuthData() {
@@ -23,6 +25,8 @@ function getStoredAuthData() {
   var storedToken = localStorage.getItem('token');
   var storedEc2Url = localStorage.getItem('ec2Url');
   var storedEc2Region = localStorage.getItem('ec2Region');
+  var storedDockerCredsUsername = localStorage.getItem('dockerCredsUsername');
+  var storedDockerCredsPassword = localStorage.getItem('dockerCredsPassword');
 
   return storedUserNameInput
     && storedAccessKeyIdInput
@@ -34,7 +38,8 @@ function getStoredAuthData() {
       secretAccessKey: storedSecretAccessKeyInput,
       token: storedToken,
       ec2Url: storedEc2Url ? storedEc2Url : "",
-      ec2Region: storedEc2Region ? storedEc2Region : ""
+      ec2Region: storedEc2Region ? storedEc2Region : "",
+      dockerCreds: (storedDockerCredsUsername && storedDockerCredsPassword) ? {username: storedDockerCredsUsername, password: storedDockerCredsPassword} : {username: "", password: ""}
     }) : null;
 }
 
@@ -125,6 +130,14 @@ function setupElmPorts(elmApp) {
       return console.Error("saveEc2Url port some arguments are undefined");
     }
     localStorage.setItem('ec2Region', region);
+  });
+
+  elmApp.ports.saveDockerCreds.subscribe(function({username, password}) {
+    if (!is_js.existy([username, password])) {
+      return console.Error("saveDockerCreds port some arguments are undefined");
+    }
+    localStorage.setItem('dockerCredsUsername', username);
+    localStorage.setItem('dockerCredsPassword', password);
   });
 
   elmApp.ports.logout.subscribe(function() {

@@ -37,12 +37,13 @@ type alias ProcessMetadata =
     , entrypointArgs : List String
     , cwd : String
     , packagesSequence : List String
+    , opennedFiles : List String
     }
 
 
 decodeProcessMetadata : Decoder ProcessMetadata
 decodeProcessMetadata =
-    map7 ProcessMetadata
+    map8 ProcessMetadata
         (field "cmdline" string)
         (field "exe" string)
         (field "bin" string)
@@ -50,3 +51,4 @@ decodeProcessMetadata =
         (field "entrypointArgs" (list string))
         (field "cwd" string)
         (field "packagesSequence" (list string))
+        (field "opennedFiles" (list string))
