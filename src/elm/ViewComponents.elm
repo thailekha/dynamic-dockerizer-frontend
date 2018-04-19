@@ -18,7 +18,6 @@ import Material.Progress as Loading
 import Material.Layout as Layout
 import Material.Tooltip as Tooltip
 import Material.Icon as Icon
-import Material.Badge as Badge
 import Material.Dialog as Dialog
 import Types.Auth as Auth
 import Types.Containers as Containers
@@ -660,10 +659,6 @@ processTableMdl process =
             , Table.tr []
                 [ Table.td [] [ text "Packages required" ]
                 , Table.td [ Options.css "text-align" "left" ] (List.concat <| List.map (\pkg -> [ text pkg, br [] [] ]) <| process.packagesSequence)
-                ]
-            , Table.tr []
-                [ Table.td [] [ text "Openned files when process starts" ]
-                , Table.td [ Options.css "text-align" "left" ] (List.concat <| List.map (\pkg -> [ text pkg, br [] [] ]) <| process.opennedFiles)
                 ]
             ]
         ]

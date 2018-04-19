@@ -4,7 +4,6 @@ import Html exposing (..)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
-import Pages.Container as ContainerPage
 import Types.ProgressKeys as ProgressKeys
 import State exposing (..)
 import ViewComponents exposing (..)

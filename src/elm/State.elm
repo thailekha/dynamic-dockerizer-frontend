@@ -33,7 +33,6 @@ import Dict
 import Time exposing (Time, second)
 import FileReader exposing (NativeFile)
 import Task
-import Array
 
 
 type alias Model =
@@ -105,7 +104,7 @@ resetInputs model =
         , input_Gantry_ContainersPage_Create_Host_Port = ""
         , input_Gantry_ContainersPage_Create_Bindings = []
         , input_Gantry_ContainersPage_Create_Binds = []
-        , input_Gantry_ContainersPage_Create_Privileged = False
+        , input_Gantry_ContainersPage_Create_Privileged = True
         , input_Gantry_ContainersPage_Create_OpenStdin = True
         , input_Gantry_ContainersPage_Create_Tty = True
         , input_Gantry_ImagesPage = ""
@@ -543,21 +542,24 @@ update msg model =
                 ! []
 
         Req_Gantry_ImagesPage_Remove ->
-            let 
-                (snackbarModel, snackbarCmd) = addSnackbarCmd "" "Removing image(s)" "" model
+            let
+                ( snackbarModel, snackbarCmd ) =
+                    addSnackbarCmd "" "Removing image(s)" "" model
 
-                nModel = {model | snackbar = snackbarModel}
+                nModel =
+                    { model | snackbar = snackbarModel }
             in
-                batchReqImages (nModel, snackbarCmd) (reqRemoveImage nModel)
+                batchReqImages ( nModel, snackbarCmd ) (reqRemoveImage nModel)
 
         Req_Gantry_ImagesPage_Push ->
             let
-                (snackbarModel, snackbarCmd) = addSnackbarCmd "" "Pushing image(s)" "" model
+                ( snackbarModel, snackbarCmd ) =
+                    addSnackbarCmd "" "Pushing image(s)" "" model
 
-                nModel = {model | snackbar = snackbarModel}
-
+                nModel =
+                    { model | snackbar = snackbarModel }
             in
-                batchReqImages (nModel, snackbarCmd) (reqPushImage nModel)
+                batchReqImages ( nModel, snackbarCmd ) (reqPushImage nModel)
 
         Req_Gantry_ContainersPage_Start ->
             model ! [ batchReqContainers model <| reqContainerManagement model "POST" "/start" ]
@@ -1492,7 +1494,7 @@ reqGetProcesses model =
             Http.request
                 { method = "GET"
                 , headers = [ Http.header "Authorization" ("Bearer " ++ token) ]
-                , url = cloneIP ++ ":8081" ++ "/process"
+                , url = cloneIP ++ ":8081" ++ "/processes"
                 , body = Http.emptyBody
                 , expect = Http.expectJson Processes.decodeProcesses
                 , timeout = Nothing
@@ -1520,7 +1522,7 @@ reqGetProcessMetadata model progressKey pid =
                     [ Http.header "Authorization" ("Bearer " ++ token)
                     , Http.header "x-dd-progress" progressKey
                     ]
-                , url = cloneIP ++ ":8081" ++ "/process/" ++ pid
+                , url = cloneIP ++ ":8081" ++ "/processes/" ++ pid
                 , body = Http.emptyBody
                 , expect = Http.expectJson Processes.decodeProcessMetadata
                 , timeout = Nothing
@@ -1548,7 +1550,7 @@ reqConvertProcess model progressKey pid =
                     [ Http.header "Authorization" ("Bearer " ++ token)
                     , Http.header "x-dd-progress" progressKey
                     ]
-                , url = cloneIP ++ ":8081" ++ "/process/" ++ pid ++ "/convert"
+                , url = cloneIP ++ ":8081" ++ "/processes/" ++ pid ++ "/convert"
                 , body = Http.emptyBody
                 , expect = Http.expectJson CommonResponses.decodeStringResponse
                 , timeout = Nothing
@@ -1783,9 +1785,9 @@ batchReqContainers model reqCb =
     Cmd.batch <| List.map (\containerID -> reqCb containerID) <| Set.toList model.input_Gantry_ContainersPage_SelectedContainers
 
 
-batchReqImages : (Model, Cmd Msg) -> (String -> Cmd Msg) -> (Model, Cmd Msg)
-batchReqImages (model, initialSnackbarCmd) reqCb =
-    let 
+batchReqImages : ( Model, Cmd Msg ) -> (String -> Cmd Msg) -> ( Model, Cmd Msg )
+batchReqImages ( model, initialSnackbarCmd ) reqCb =
+    let
         cloneIP =
             ConvertPage.tryGetCloneIP model.convertPage
 
@@ -1795,23 +1797,26 @@ batchReqImages (model, initialSnackbarCmd) reqCb =
         dockerPassword =
             model.input_Gantry_ImagesPage_DockerCreds.password
 
-        cmds = List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
+        cmds =
+            List.map (\imageID -> reqCb imageID) <| Set.toList model.input_Gantry_ImagesPage_SelectedImages
 
-        (nModel, snackbarCmd) =
+        ( nModel, snackbarCmd ) =
             if List.member Cmd.none cmds then
                 if not (allNonemptyStrings [ cloneIP ]) then
-                    model ! [initialSnackbarCmd]
+                    model
+                        ! [ initialSnackbarCmd ]
                         |> addSnackbar "" "Invalid clone's IP" "FAILURE"
                 else if not (allNonemptyStrings [ dockerUsername, dockerPassword ]) then
-                    model ! [initialSnackbarCmd]
+                    model
+                        ! [ initialSnackbarCmd ]
                         |> addSnackbar "" "Invalid Docker credentials" "FAILURE"
                 else
-                    model ! [initialSnackbarCmd]
+                    model
+                        ! [ initialSnackbarCmd ]
                         |> addSnackbar "" "Error" "FAILURE"
             else
-                model ! [initialSnackbarCmd]
-
-    in 
+                model ! [ initialSnackbarCmd ]
+    in
         nModel ! (snackbarCmd :: cmds)
 
 
@@ -1836,7 +1841,7 @@ addSnackbarCmd payload message label model =
         ( snackbar_, effect ) =
             Snackbar.add (Snackbar.snackbar payload message label) model.snackbar
     in
-        (snackbar_, Cmd.map Snackbar effect)
+        ( snackbar_, Cmd.map Snackbar effect )
 
 
 
