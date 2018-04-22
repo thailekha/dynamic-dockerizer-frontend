@@ -23,16 +23,34 @@ updateContainersWebdata model response =
     }
 
 
-tryGetContainerFromId : Model -> String -> Maybe Container
-tryGetContainerFromId model id =
+tryGetContainerIdentifierFromId : Model -> String -> String
+tryGetContainerIdentifierFromId model id =
     case model.containersWebdata of
         RemoteData.Success response ->
-            List.filter (\c -> containerKey c == id) response.containers
-                |> Array.fromList
-                |> Array.get 0
+            case
+                (List.filter (\c -> containerKey c == id) response.containers
+                    |> Array.fromList
+                    |> Array.get 0
+                )
+            of
+                Just container ->
+                    case
+                        (container.names
+                            |> Array.fromList
+                            |> Array.get 0
+                        )
+                    of
+                        Just name ->
+                            name
+
+                        Nothing ->
+                            id
+
+                Nothing ->
+                    id
 
         _ ->
-            Nothing
+            id
 
 
 tryGetContainers : Model -> List Container

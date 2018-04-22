@@ -1,10 +1,10 @@
 module Views exposing (..)
 
 import Html exposing (..)
+import Html.Attributes exposing (height, width, src)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
-import Pages.Container as ContainerPage
 import Types.ProgressKeys as ProgressKeys
 import State exposing (..)
 import ViewComponents exposing (..)
@@ -94,9 +94,10 @@ loginView : Model -> Html Msg
 loginView model =
     centerDiv <|
         breaker
-            [ (case model.loginPage.credentialsWebdata of
+            [ img [ src "static/img/logo1.png", height 100, width 300 ] []
+            , (case model.loginPage.credentialsWebdata of
                 RemoteData.NotAsked ->
-                    textMdl "Please login"
+                    div [] []
 
                 RemoteData.Loading ->
                     httpLoadingMessage "Loading ..."
@@ -350,7 +351,11 @@ imagesView model =
                 httpLoadingMessage "Loading ..."
 
             RemoteData.Success webdata ->
-                imagesTableMdl model webdata.images
+                div []
+                    [ dockerCredentialsDialog model
+                    , br [] []
+                    , imagesTableMdl model webdata.images
+                    ]
 
             RemoteData.Failure error ->
                 httpFailureMessage "fetch images" error

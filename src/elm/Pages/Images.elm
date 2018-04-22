@@ -23,16 +23,34 @@ updateImagesWebdata model response =
     }
 
 
-tryGetImageFromId : Model -> String -> Maybe Image
-tryGetImageFromId model id =
+tryGetImageIdentifierFromId : Model -> String -> String
+tryGetImageIdentifierFromId model id =
     case model.imagesWebdata of
         RemoteData.Success response ->
-            List.filter (\i -> imageKey i == id) response.images
-                |> Array.fromList
-                |> Array.get 0
+            case
+                (List.filter (\i -> imageKey i == id) response.images
+                    |> Array.fromList
+                    |> Array.get 0
+                )
+            of
+                Just image ->
+                    case
+                        (image.repoTags
+                            |> Array.fromList
+                            |> Array.get 0
+                        )
+                    of
+                        Just name ->
+                            name
+
+                        Nothing ->
+                            id
+
+                Nothing ->
+                    id
 
         _ ->
-            Nothing
+            id
 
 
 tryGetImages : Model -> List Image

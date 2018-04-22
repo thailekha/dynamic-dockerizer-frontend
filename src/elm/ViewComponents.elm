@@ -18,7 +18,7 @@ import Material.Progress as Loading
 import Material.Layout as Layout
 import Material.Tooltip as Tooltip
 import Material.Icon as Icon
-import Material.Badge as Badge
+import Material.Dialog as Dialog
 import Types.Auth as Auth
 import Types.Containers as Containers
 import Types.Instances as Instances
@@ -77,23 +77,15 @@ view_ headerTitle model main_ =
         drawer =
             [ Layout.title
                 [ Color.background <| Color.color Color.Teal Color.S500
-
-                --, Options.css "border-bottom-style" "solid"
-                --, Options.css "border-color" "#ffffff"
-                --, Options.css "border-width" "5px"
                 ]
                 [ img [ src "static/img/logo1.png", height 50, width 150 ] [] ]
             , Layout.navigation
-                --[ Color.background Color.black
-                --]
                 []
               <|
                 List.map
                     (\( label, url ) ->
                         Layout.link
                             [ Layout.href ("#/" ++ url)
-
-                            --, Options.onClick (Layout.toggleDrawer Mdl)
                             ]
                             [ text label ]
                     )
@@ -133,6 +125,7 @@ buttonMdl model index cb display =
         -- onClick cannot be used multiple times
         [ Button.raised
         , Button.colored
+        , Button.ripple
         , Options.onClick cb
         ]
         [ text display ]
@@ -147,6 +140,7 @@ rightButtonMdl model index cb display =
         [ Options.css "float" "right"
         , Button.raised
         , Button.colored
+        , Button.ripple
         , Options.onClick cb
         ]
         [ text display ]
@@ -783,6 +777,7 @@ imagesTableMdl model images =
     if List.length images > 0 then
         div []
             [ buttonMdl model 1 State.Req_Gantry_ImagesPage_Remove "Remove"
+            , buttonMdl model 2 State.Req_Gantry_ImagesPage_Push "Push to Docker Hub"
             , Table.table []
                 [ Table.thead []
                     [ Table.tr []
@@ -830,6 +825,58 @@ imagesTableMdl model images =
     else
         blueDivMdl
             [ textNotificationMdl "No images found" ]
+
+
+dockerCredentialsDialog : Model -> Html Msg
+dockerCredentialsDialog model =
+    let
+        dialog =
+            Dialog.view
+                []
+                [ Dialog.title [] []
+                , Dialog.content []
+                    [ div []
+                        [ text "Saved credentials for username: "
+                        , textMidMdl model.input_Gantry_ImagesPage_DockerCreds.username
+                        ]
+                    , Html.hr [] []
+                    , inputMdl model 1 State.Input_Gantry_ImagesPage_DockerUsername "username" "text" "Username"
+                    , inputMdl model 2 State.Input_Gantry_ImagesPage_DockerPassword "password" "password" "Password"
+                    ]
+                , Dialog.actions []
+                    [ Button.render State.Mdl
+                        [ -1 ]
+                        model.mdl
+                        [ Dialog.closeOn "click"
+                        , Button.raised
+                        , Button.colored
+                        , Button.ripple
+                        , Options.onClick State.Input_Gantry_ImagesPage_DockerCreds
+                        ]
+                        [ text "Set" ]
+                    , Button.render State.Mdl
+                        [ -2 ]
+                        model.mdl
+                        [ Dialog.closeOn "click" ]
+                        [ text "Cancel" ]
+                    ]
+                ]
+
+        openButton =
+            Button.render State.Mdl
+                [ -1 ]
+                model.mdl
+                [ Dialog.openOn "click"
+                , Button.raised
+                , Button.colored
+                , Button.ripple
+                ]
+                [ text "Set Docker Hub credentials" ]
+    in
+        div []
+            [ dialog
+            , openButton
+            ]
 
 
 
