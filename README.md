@@ -14,7 +14,7 @@ npm run lint-elm
 ```
 Build:
 ```
-npm run build
+webpack
 ```
 Start (development mode):
 ```
