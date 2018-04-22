@@ -1,7 +1,7 @@
 {
   "name": "dynamic-dockerizer-frontend",
   "description": "Frontend for Dynamic Dockerizer",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "license": "MIT",
   "author": "Thai Le",
   "repository": {

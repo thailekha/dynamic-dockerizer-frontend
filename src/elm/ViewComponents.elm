@@ -77,23 +77,15 @@ view_ headerTitle model main_ =
         drawer =
             [ Layout.title
                 [ Color.background <| Color.color Color.Teal Color.S500
-
-                --, Options.css "border-bottom-style" "solid"
-                --, Options.css "border-color" "#ffffff"
-                --, Options.css "border-width" "5px"
                 ]
                 [ img [ src "static/img/logo1.png", height 50, width 150 ] [] ]
             , Layout.navigation
-                --[ Color.background Color.black
-                --]
                 []
               <|
                 List.map
                     (\( label, url ) ->
                         Layout.link
                             [ Layout.href ("#/" ++ url)
-
-                            --, Options.onClick (Layout.toggleDrawer Mdl)
                             ]
                             [ text label ]
                     )

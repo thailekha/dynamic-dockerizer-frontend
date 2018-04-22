@@ -1,6 +1,7 @@
 module Views exposing (..)
 
 import Html exposing (..)
+import Html.Attributes exposing (height, width, src)
 import RemoteData
 import Types.Auth as Auth
 import Pages.Router as Router
@@ -93,9 +94,10 @@ loginView : Model -> Html Msg
 loginView model =
     centerDiv <|
         breaker
-            [ (case model.loginPage.credentialsWebdata of
+            [ img [ src "static/img/logo1.png", height 100, width 300 ] []
+            , (case model.loginPage.credentialsWebdata of
                 RemoteData.NotAsked ->
-                    textMdl "Please login"
+                    div [] []
 
                 RemoteData.Loading ->
                     httpLoadingMessage "Loading ..."
